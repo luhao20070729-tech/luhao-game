@@ -5933,6 +5933,7 @@ async function showShareCard(){
       <button class="btn" id="cardClose">关闭</button>
     </div>`;
   ov.querySelector('#cardClose').onclick = () => ov.remove();
+  if (window.claude) ov.querySelector('#cardSave').remove();   // 在 claude.ai 里不能直接下载，只能长按保存
   ov.querySelector('#cardShare').onclick = async () => {
     try {
       const blob = await (await fetch(url)).blob(), f = new File([blob], file, {type:'image/jpeg'});
