@@ -5753,6 +5753,195 @@ evSet('h_cold', () => vrun('ev:hcold'));
 evSet('j_visit', () => vrun('ev:jvisit'));
 evSet('novisit', () => vrun('ev:novisit'));
 
+/* ---------- 人生总结图：一张可以保存、发给朋友比较的长图 ---------- */
+const SCKEY = 'fusheng-scores-v1';
+function loadScores(){ try { return JSON.parse(localStorage.getItem(SCKEY)) || []; } catch (e) { return []; } }
+function recordScore(){
+  if (!S || S.alive || S.scored) return;
+  S.scored = 1;
+  const all = loadScores(); all.push({s:S.score, n:S.name, e:S.end, a:S.age, id:S._id});
+  try { localStorage.setItem(SCKEY, JSON.stringify(all.slice(-300))); } catch (e) {}
+  save();
+}
+function scoreRank(){
+  const all = loadScores();
+  if (all.length <= 1) return '这是你活过的第一段人生';
+  const others = all.filter(x => x.id !== S._id);
+  if (others.every(x => x.s < S.score)) return `你活过的 ${all.length} 段人生里，这是最精彩的一段（历史最高分）`;
+  const best = others.reduce((a, b) => b.s > a.s ? b : a);
+  return `超过了你 ${Math.round(others.filter(x => x.s < S.score).length / others.length * 100)}% 的人生 · 你的历史最高是 ${best.s} 分（${best.n}）`;
+}
+const GRADE = s => s >= 560 ? ['S', '传奇的一生'] : s >= 440 ? ['A', '精彩的一生'] : s >= 330 ? ['B', '圆满的一生'] : s >= 220 ? ['C', '平凡的一生'] : ['D', '坎坷的一生'];
+function wrapLines(g, text, maxW){
+  const out = []; let cur = '';
+  for (const ch of String(text)){
+    if (cur && g.measureText(cur + ch).width > maxW && !'，。！？、；：”）》'.includes(ch)){ out.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+function loadImg(src){ return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; }); }
+function cardPics(){
+  const out = [];
+  S.photos.slice(-6).reverse().forEach(p => out.push([travelArt(p.p, p.s), `${DEST[p.p].n} · ${p.a}岁`]));
+  (S.pets || []).forEach(p => out.push([itemArt('pet', p.i, p.s), `${p.n} · ${PETS[p.i].n}`]));
+  (S.petMem || []).filter(m => m.why === '去世').slice(-2).forEach(m => out.push([itemArt('pet', m.i, m.s), `${m.n} · 陪了你 ${m.to - m.from} 年`]));
+  const H = S.assets.houses.slice().sort((a, b) => b.v - a.v)[0]; if (H) out.push([itemArt('house', houseIdx(H), H.s || 3), H.n]);
+  const C = S.assets.cars.slice().sort((a, b) => b.v - a.v)[0]; if (C) out.push([itemArt('car', carIdx(C), C.s || 5), C.n]);
+  (S.items || []).filter(x => !x.got).sort((a, b) => b.v - a.v).slice(0, 2).forEach(x => out.push([itemArt(x.k, x.i, x.s), x.n]));
+  (S.items || []).filter(x => x.got).slice(0, 2).forEach(x => out.push([itemArt(x.k, x.i, x.s, x.n), x.n]));
+  return out.slice(0, 9);
+}
+async function makeCard(){
+  const end = ENDINGS.find(e => e.id === S.end) || ENDINGS[ENDINGS.length - 1];
+  // 网页字体是按需下载的，先把要画的字都加载好，否则画出来是方框
+  const need = '浮生一世结局人生节点照片墙最后的模样成就个你的人生会比我精彩吗传奇精彩圆满平凡坎坷一生岁零0123456789SABCD·' + S.name + S.cause + end.n + end.e + S.ach.map(id => (ACH.find(a => a[0] === id) || [])[2] || '').join('');
+  try { await Promise.race([Promise.all(['400', '700'].map(w => document.fonts.load(`${w} 48px "ZCOOL XiaoWei"`, need))), new Promise(r => setTimeout(r, 4000))]); await document.fonts.ready; } catch (e) {}
+  const pics = await Promise.all(cardPics().map(async ([u, n]) => [await loadImg(u), n]));
+  const W = 1080, P = 76, CW = W - P * 2;
+  const c = document.createElement('canvas'); c.width = W; c.height = 7000;
+  const g = c.getContext('2d');
+  const INK = '#2A2420', RED = '#B23A2E', GREY = '#8A8076', LINE = 'rgba(60,40,20,.18)';
+  const PAPER = end.dark ? ['#E9E4DA', '#D9D2C6'] : ['#F6EFE1', '#EADFCB'];
+  const F = (w, s) => `${w} ${s}px "ZCOOL XiaoWei","STKaiti","KaiTi","Songti SC","Noto Serif SC",serif`;
+  const FS = (w, s) => `${w} ${s}px -apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif`;
+  const txt = (t, x, y, font, col, align = 'left') => { g.font = font; g.fillStyle = col; g.textAlign = align; g.fillText(t, x, y); };
+  const head = (t, y) => { g.fillStyle = RED; g.fillRect(P, y - 30, 10, 34); txt(t, P + 26, y, F(700, 44), INK); g.fillStyle = LINE; g.fillRect(P + 26 + g.measureText(t).width + 24, y - 14, CW, 2); return y + 52; };
+  let y = P + 20;
+  txt('浮　生　一　世', W / 2, y, F(400, 34), RED, 'center'); y += 28;
+  g.fillStyle = RED; g.fillRect(W / 2 - 40, y, 80, 3); y += 120;
+  txt(S.name, W / 2, y, F(700, 128), INK, 'center'); y += 64;
+  const origin = (FAM.find(x => x.id === S.origin) || {}).n || '';
+  txt(`${S.gender === 'm' ? '男' : '女'} · ${origin}出身 · 享年 ${S.age} 岁`, W / 2, y, FS(400, 34), GREY, 'center'); y += 58;
+  g.font = F(400, 40); wrapLines(g, S.cause, CW).forEach(l => { txt(l, W / 2, y, F(400, 40), INK, 'center'); y += 52; });
+  y += 36;
+  // 结局
+  g.font = F(400, 38); const epi = wrapLines(g, end.e, CW - 120);
+  const bh = 150 + epi.length * 52;
+  g.strokeStyle = RED; g.lineWidth = 4; rrect(g, P + 20, y, CW - 40, bh, 18); g.stroke();
+  g.lineWidth = 1.5; rrect(g, P + 32, y + 12, CW - 64, bh - 24, 12); g.stroke();
+  txt('结　局', W / 2, y + 52, FS(400, 28), RED, 'center');
+  txt(end.n, W / 2, y + 128, F(700, 76), end.dark ? '#4A4038' : RED, 'center');
+  epi.forEach((l, i) => txt(l, W / 2, y + 186 + i * 52, F(400, 38), INK, 'center'));
+  if (S.newEnd){ g.save(); g.translate(W - P - 30, y + 18); g.rotate(.22); g.fillStyle = RED; rrect(g, -70, -22, 140, 44, 8); g.fill(); txt('新结局', 0, 12, FS(700, 28), '#FFF', 'center'); g.restore(); }
+  y += bh + 70;
+  // 评分
+  const [gl, gw] = GRADE(S.score);
+  g.fillStyle = RED; g.beginPath(); g.arc(P + 110, y + 40, 92, 0, 6.29); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 3; g.beginPath(); g.arc(P + 110, y + 40, 78, 0, 6.29); g.stroke();
+  txt(gl, P + 110, y + 76, F(700, 104), '#FFF8EC', 'center');
+  txt('人生评分', P + 250, y - 6, FS(400, 30), GREY);
+  txt(String(S.score), P + 250, y + 92, F(700, 112), INK);
+  txt(gw, P + 250 + g.measureText(String(S.score)).width + 26, y + 88, F(400, 42), RED);
+  y += 170;
+  g.font = FS(400, 32); wrapLines(g, scoreRank(), CW).forEach(l => { txt(l, P, y, FS(400, 32), GREY); y += 44; });
+  y += 40;
+  // 数值
+  y = head('最后的模样', y);
+  const ST = [['健康', 'health', '#4E9A6A'], ['智力', 'smarts', '#4A78B8'], ['颜值', 'looks', '#C8668A'], ['快乐', 'happy', '#D9A23A']];
+  ST.forEach(([n, k, col], i) => {
+    const x = P + (i % 2) * (CW / 2 + 10), yy = y + Math.floor(i / 2) * 70, bw = CW / 2 - 150;
+    txt(n, x, yy + 12, FS(400, 32), INK);
+    g.fillStyle = 'rgba(60,40,20,.1)'; rrect(g, x + 80, yy - 8, bw, 22, 11); g.fill();
+    g.fillStyle = col; rrect(g, x + 80, yy - 8, Math.max(22, bw * S.st[k] / 100), 22, 11); g.fill();
+    txt(String(S.st[k]), x + 80 + bw + 16, yy + 12, FS(700, 32), INK);
+  });
+  y += 150;
+  const kids = S.kids.filter(k => !k.dead).length, places = new Set(S.photos.map(p => p.p)).size;
+  const facts = [`身家 ${fmt(Math.round(worth()))}`, S.partner && S.partner.married ? `和${S.partner.name}相伴 ${S.age - S.partner.since} 年` : S.flags.divorces ? `离过 ${S.flags.divorces} 次婚` : S.flags.everLoved ? '最后一个人走完' : '一生未婚', kids ? `儿女 ${kids} 个` : '', S.grand ? `孙辈 ${S.grand} 个` : '', places ? `去过 ${places} 个地方` : '', (S.flags.petsEver || 0) ? `养过 ${S.flags.petsEver} 只宠物` : '', EDU[S.edu] ? `学历：${EDU[S.edu]}` : ''].filter(Boolean);
+  g.font = FS(400, 32); wrapLines(g, facts.join('　·　'), CW).forEach(l => { txt(l, P, y, FS(400, 32), INK); y += 48; });
+  y += 50;
+  // 人生节点
+  const ms = pickMilestones();
+  if (ms.length){
+    y = head('人生节点', y);
+    const lx = P + 150, top = y - 20;
+    ms.forEach(m => {
+      g.font = FS(400, 34); const ls = wrapLines(g, m.t, CW - 190);
+      g.fillStyle = m.bad ? '#8A8076' : RED; g.beginPath(); g.arc(lx, y - 10, 9, 0, 6.29); g.fill();
+      txt(`${m.a}岁`, lx - 30, y, F(700, 38), m.bad ? GREY : RED, 'right');
+      ls.forEach((l, i) => txt(l, lx + 34, y + i * 46, FS(400, 34), m.bad ? '#6E655C' : INK));
+      y += ls.length * 46 + 26;
+    });
+    g.fillStyle = LINE; g.fillRect(lx - 1.5, top, 3, y - top - 40);
+    y += 40;
+  }
+  // 照片墙
+  const ok = pics.filter(([im]) => im);
+  if (ok.length){
+    y = head('照片墙', y);
+    const gap = 18, cw = (CW - gap * 2) / 3, ch = cw * 2 / 3;
+    ok.forEach(([im, n], i) => {
+      const x = P + (i % 3) * (cw + gap), yy = y + Math.floor(i / 3) * (ch + 64);
+      g.save(); g.shadowColor = 'rgba(0,0,0,.18)'; g.shadowBlur = 14; g.shadowOffsetY = 4; g.fillStyle = '#FFF'; g.fillRect(x - 6, yy - 6, cw + 12, ch + 50); g.restore();
+      const r = Math.max(cw / im.width, ch / im.height), sw = cw / r, sh = ch / r;
+      g.drawImage(im, (im.width - sw) / 2, (im.height - sh) / 2, sw, sh, x, yy, cw, ch);
+      g.font = FS(400, 24); let cap = n; while (cap.length > 2 && g.measureText(cap).width > cw - 8) cap = cap.slice(0, -2) + '…';
+      txt(cap, x + cw / 2, yy + ch + 32, FS(400, 24), GREY, 'center');
+    });
+    y += Math.ceil(ok.length / 3) * (ch + 64) + 40;
+  }
+  // 成就
+  const achs = S.ach.map(id => ACH.find(a => a[0] === id)).filter(Boolean);
+  y = head(`成就 · ${achs.length} 个`, y);
+  if (achs.length){
+    const per = 6, cw = CW / per;
+    achs.slice(0, 24).forEach(([, n, s, th], i) => {
+      const x = P + (i % per) * cw + cw / 2, yy = y + Math.floor(i / per) * 150 + 40;
+      g.fillStyle = th === 'dark' ? '#5E5650' : RED; g.beginPath(); g.arc(x, yy, 48, 0, 6.29); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 2; g.beginPath(); g.arc(x, yy, 40, 0, 6.29); g.stroke();
+      txt(s, x, yy + 18, F(700, 50), '#FFF8EC', 'center');
+      g.font = FS(400, 22); let nn = n; while (nn.length > 2 && g.measureText(nn).width > cw - 6) nn = nn.slice(0, -1);
+      txt(nn, x, yy + 86, FS(400, 22), INK, 'center');
+    });
+    y += Math.ceil(Math.min(24, achs.length) / per) * 150 + 20;
+    if (achs.length > 24){ txt(`还有 ${achs.length - 24} 个……`, P, y, FS(400, 28), GREY); y += 50; }
+  } else { txt('这一生，没有解锁任何成就。', P, y + 10, FS(400, 32), GREY); y += 60; }
+  y += 30;
+  // 页脚
+  g.fillStyle = LINE; g.fillRect(P, y, CW, 2); y += 76;
+  txt('你的人生，会比我精彩吗？', W / 2, y, F(400, 44), INK, 'center'); y += 62;
+  txt('luhao-game.onrender.com', W / 2, y, FS(700, 34), RED, 'center'); y += 50;
+  const d = new Date();
+  txt(`浮生一世 · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`, W / 2, y, FS(400, 26), GREY, 'center'); y += P;
+  // 裁剪并铺上纸张底色
+  const out = document.createElement('canvas'); out.width = W; out.height = Math.ceil(y);
+  const o = out.getContext('2d');
+  const bg = o.createLinearGradient(0, 0, 0, out.height); bg.addColorStop(0, PAPER[0]); bg.addColorStop(1, PAPER[1]); o.fillStyle = bg; o.fillRect(0, 0, W, out.height);
+  for (let k = 0; k < 2600; k++){ o.fillStyle = `rgba(${Math.random() < .5 ? '120,90,50' : '255,255,255'},.06)`; o.fillRect(Math.random() * W, Math.random() * out.height, 2, 2); }
+  o.strokeStyle = 'rgba(178,58,46,.35)'; o.lineWidth = 3; o.strokeRect(24, 24, W - 48, out.height - 48);
+  o.drawImage(c, 0, 0, W, out.height, 0, 0, W, out.height);
+  return out.toDataURL('image/jpeg', .9);
+}
+async function showShareCard(){
+  if (!S || S.alive) return;
+  recordScore();
+  document.getElementById('shareOv')?.remove();
+  const ov = document.createElement('div'); ov.id = 'shareOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(8,10,12,.9);overflow:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;padding:16px 16px 96px';
+  ov.innerHTML = '<div style="color:#EDE6D6;margin:40vh 0;font-size:16px">正在生成人生总结图……</div>';
+  document.body.appendChild(ov);
+  let url = '';
+  try { url = await makeCard(); } catch (e) { ov.innerHTML = '<div style="color:#EDE6D6;margin:40vh 0">生成失败了，请再试一次。</div>'; setTimeout(() => ov.remove(), 2000); return; }
+  const file = `浮生一世-${S.name}-${S.score}分.jpg`;
+  ov.innerHTML = `<p style="color:#CFC6B4;font-size:14px;margin:4px 0 12px;text-align:center">长按图片可以保存，或者直接发给朋友</p>
+    <img src="${url}" alt="${esc(S.name)}的人生总结图" style="width:100%;max-width:540px;height:auto;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+    <div style="position:fixed;left:0;right:0;bottom:0;display:flex;gap:10px;justify-content:center;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(8,10,12,.95) 35%)">
+      <a class="btn primary" id="cardSave" href="${url}" download="${esc(file)}" style="text-decoration:none">保存图片</a>
+      <button class="btn" id="cardShare">分享</button>
+      <button class="btn" id="cardClose">关闭</button>
+    </div>`;
+  ov.querySelector('#cardClose').onclick = () => ov.remove();
+  ov.querySelector('#cardShare').onclick = async () => {
+    try {
+      const blob = await (await fetch(url)).blob(), f = new File([blob], file, {type:'image/jpeg'});
+      if (navigator.canShare && navigator.canShare({files:[f]})){ await navigator.share({files:[f], title:'我的浮生一世', text:`我在《浮生一世》里活到了 ${S.age} 岁，结局是「${(ENDINGS.find(e => e.id === S.end) || {}).n}」，人生评分 ${S.score}。你呢？ https://luhao-game.onrender.com`}); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    toast('这个浏览器不能直接分享，长按图片保存后发给朋友吧');
+  };
+}
+
 /* ---------- 天空：随年龄从清晨走到黄昏，去世后入夜；流浪下雨，坐牢阴冷，出家山雾 ---------- */
 /* 每组颜色：[天顶, 天腰, 地平线, 远山, 近山, 日月] */
 const SKY = {
@@ -6084,9 +6273,11 @@ function render(){
       <div class="tag">${esc(S.name)} · 享年 ${S.age} 岁 · 人生评分 ${S.score}</div>
       <div class="title">${esc(end.n)}</div>
       <div>${esc(end.e)}</div>
-      <div class="row"><button class="btn primary" id="again">再活一次</button><button class="btn" id="replay">重看谢幕</button></div>`;
+      <div class="row"><button class="btn primary" id="again">再活一次</button><button class="btn" id="cardBtn">人生总结图</button><button class="btn" id="replay">重看谢幕</button></div>`;
     $('#again').onclick = () => { clearSave(); showStart(); };
     $('#replay').onclick = showFinale;
+    $('#cardBtn').onclick = showShareCard;
+    recordScore();
     if (S.showFinale){ S.showFinale = false; save(); const me = S; setTimeout(() => { if (S === me) showFinale(); }, reduced ? 0 : 900); }
   }
   renderLog();
@@ -6152,7 +6343,7 @@ function showFinale(){
     <div class="score fs" style="--d:${nd(.6)}"><span id="finScore">0</span><small>人生评分</small></div>
     ${S.ach.length ? `<div class="badges">${S.ach.map(id => ACH.find(a => a[0] === id)).filter(Boolean).map(([, n, s]) => `<span class="badge" style="--d:${nd(.07)}"><i>${esc(s)}</i>${esc(n)}</span>`).join('')}</div>` : ''}
     <div class="coll fs" style="--d:${nd(.3)}">这一世解锁成就 ${S.ach.length} 个 · 已收集结局 ${seen.length} / ${ENDINGS.length}</div>
-    <div class="row fs" style="--d:${nd(.2)}"><button class="btn primary" id="finAgain">再活一次</button><button class="btn" id="finClose">回看人生记录</button></div>
+    <div class="row fs" style="--d:${nd(.2)}"><button class="btn primary" id="finCard">生成人生总结图</button><button class="btn" id="finAgain">再活一次</button><button class="btn" id="finClose">回看人生记录</button></div>
   </div>`;
   fin.hidden = false; fin.scrollTop = 0;
   const scoreAt = reduced ? 0 : parseFloat(fin.querySelector('.score').style.getPropertyValue('--d')) * 1000;
@@ -6160,6 +6351,7 @@ function showFinale(){
   setTimeout(() => { const el = $('#finScore'); if (el) animateNumber(el, 0, score, v => Math.round(v)); }, scoreAt);
   $('#finAgain').onclick = () => { fin.hidden = true; clearSave(); showStart(); };
   $('#finClose').onclick = () => { fin.hidden = true; };
+  $('#finCard').onclick = showShareCard;
   $('#finClose').focus({preventScroll:true});
 }
 
