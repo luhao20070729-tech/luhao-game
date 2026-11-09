@@ -977,6 +977,7 @@ function nextYear(){
   hold = true;
   try {
     passive();
+    if (S.alive) extraTick();
     if (S.alive) bodyTick();
     if (S.alive && !S.jail && !S.flags.homeless) schoolTick();
     if (S.alive) accidentRoll();
@@ -1150,7 +1151,7 @@ function moneyTick(){
   if (S.money > 0) inc += Math.round(S.money * .015);
   const P = S.partner;
   if (P && P.married && P.inc){ const v = Math.round(P.inc * .5); inc += v; notes.push(`${P.name}贴补家用 ${fmt(v)}`); P.wealth = Math.round((P.wealth || 0) + P.inc * .3); }
-  (S.items || []).forEach(x => { if (x.got) return; x.v = Math.round(x.v * (x.k === 'vase' ? .9 + Math.random() * .25 : x.r || .95)); if (x.k === 'yacht') exp += Math.round(x.v * .05); });
+  (S.items || []).forEach(x => { if (x.got) return; x.v = Math.round(x.v * (['vase','painting','goldbar'].includes(x.k) && !x.fake ? .9 + Math.random() * .25 : x.r || .95)); if (x.k === 'yacht' || x.k === 'jet') exp += Math.round(x.v * .05); });
   // 开销
   const atHome = f.home && parentsAlive();
   let life = f.homeless ? 6000 : f.monk ? 3000 : S.school ? (tier() >= 2 ? 0 : 12000) : atHome ? 6000 : S.money > 1e7 ? 200000 : S.money > 1e6 ? 60000 : 22000;
@@ -1777,13 +1778,7 @@ EV.push(...[
   // 婚外情的后果
   {id:'affairfound', a:[18,90], w:3, c:() => S.affair && isMarried(), r:() => {
     if (!chance(.25 + S.affair.yrs * .1)){ S.affair.yrs++; L(`你和${S.affair.n}的事还瞒着家里。`, 'n', {stress:6}); return; }
-    S.flags.caught = 1; unlock('caught');
-    node('裂', '东窗事发', `${S.partner.name}拿着你和${S.affair.n}的照片，一句话也没说。`, true);
-    modal('东窗事发', `${S.partner.name}发现了你和${S.affair.n}的事。`, [
-      {l:'跪下求原谅', f:() => chance(.3) ? (S.affair = null, L('对方哭了一整夜，最后给了你一次机会。', 'b', {happy:-10, stress:10})) : divorce(`对方没有原谅你。你们离婚了，财产分走了一大半。`, .6)},
-      {l:'干脆离婚', f:() => divorce(`你和${S.partner.name}离婚了。`, .5)},
-      {l:'净身出户', f:() => divorce('你签了离婚协议，净身出户。', 1)},
-    ], '感情');
+    affairCaught(pick(CAUGHT_HOW));
   }},
   {id:'loverask', a:[18,90], w:.8, c:() => S.affair && S.money >= 100000, r:() => { const amt = Math.round(S.money * .3); modal('情人', `${S.affair.n}说：“给我 ${fmt(amt)}，不然我就去找你家里人。”`, [
     {l:'给', f:() => { scam(amt); L('你转了账，对方拉黑了你。原来对方一开始就是冲着钱来的。', 'b', {money:-amt, happy:-10, stress:10}); S.affair = null; }},
@@ -2088,7 +2083,7 @@ const ACTS = [
   {l:'消费购物', m:['adult','old'], ok:() => S.money > 0, modal:1, d:() => '房子、车、奢侈品…', f:shopMenu},
   {l:'理财投资', m:['adult','old'], ok:() => S.money >= 10000, modal:1, d:() => '有赚有赔', f:investMenu},
   {l:'赌一把', m:['adult','old'], ok:() => S.money >= 1000 || S.flags.gambler, modal:1, d:() => '十赌九输', risky:1, f:gambleMenu},
-  {l:'卖房卖车', m:['adult','old','homeless'], ok:() => S.assets.houses.length + S.assets.cars.length > 0, modal:1, d:() => '变现', f:sellMenu},
+  {l:'变卖家当', m:['uni','adult','old','homeless'], ok:() => S.age >= 18 && S.assets.houses.length + S.assets.cars.length + (S.items || []).filter(x => !x.got).length + (S.pets || []).length > 0, modal:1, d:() => '房 · 车 · 东西 · 当铺', f:() => sellMenu(false)},
   {l:'做慈善', m:['adult','old'], ok:() => S.money >= 100000, d:() => '捐出 10%', f:() => {
     const amt = Math.round(S.money * .1);
     S.flags.charity = (S.flags.charity || 0) + amt;
@@ -2721,6 +2716,106 @@ const fxLayer = (() => {
           g.globalAlpha = 1;
         });
       }},
+    /* 宠物：两串小脚印从屏幕一头走到另一头 */
+    paws:{init:() => ({tr:many(2, (_, i) => ({y:rnd(.28, .72), d:i * 1.1, dir:i % 2 ? -1 : 1, c:pick(['#8A5A3C','#5E4636','#C27C4A','#6B6B6B'])})), h:many(10, () => ({x:rnd(.1, .9), d:rnd(.5, 3.5), s:rnd(7, 13)}))}),
+      draw(s, p, e, t){
+        s.tr.forEach(tr => {
+          for (let k = 0; k < 16; k++){
+            const lt = t - tr.d - k * .2; if (lt < 0) continue;
+            const a = Math.max(0, 1 - lt / 2.4) * e; if (a <= 0) continue;
+            const f = k / 15, x = (tr.dir > 0 ? -.04 + f * 1.08 : 1.04 - f * 1.08) * W, y = tr.y * H + Math.sin(f * 7) * 26 + (k % 2 ? 13 : -13);
+            const sc = (.55 + Math.min(1, lt * 5) * .45) * Math.max(.8, Math.min(1.3, W / 500));
+            g.save(); g.translate(x, y); g.rotate(tr.dir > 0 ? Math.PI / 2 : -Math.PI / 2); g.scale(sc, sc); g.globalAlpha = a * .85; g.fillStyle = tr.c;
+            g.beginPath(); g.ellipse(0, 6, 9, 8, 0, 0, 6.3); g.fill();
+            [[-9, -5], [-3.5, -11], [3.5, -11], [9, -5]].forEach(([px, py]) => { g.beginPath(); g.ellipse(px, py, 3.4, 4.4, 0, 0, 6.3); g.fill(); });
+            g.restore();
+          }
+        });
+        s.h.forEach(q => {
+          const lt = t - q.d; if (lt < 0 || lt > 1.6) return;
+          const x = q.x * W, y = H * .8 - lt * 70, a = Math.max(0, 1 - lt / 1.6) * e, r = q.s;
+          g.globalAlpha = a; g.fillStyle = '#F06292';
+          g.beginPath(); g.moveTo(x, y + r * .9); g.bezierCurveTo(x - r * 1.6, y - r * .2, x - r * .6, y - r * 1.3, x, y - r * .4); g.bezierCurveTo(x + r * .6, y - r * 1.3, x + r * 1.6, y - r * .2, x, y + r * .9); g.fill();
+          g.globalAlpha = 1;
+        });
+      }},
+    /* 催债：门上被泼了红油漆，写着“欠债还钱”，油漆往下淌 */
+    paint:{init:() => ({w:pick(['欠债还钱','还钱！','欠债还钱','老赖还钱']), drips:many(22, () => ({x:rnd(.12, .88), d:rnd(.5, 1.8), l:rnd(.06, .3), w:rnd(2, 6)})), sp:many(46, () => ({x:rnd(0, 1), y:rnd(.1, .9), r:rnd(2, 10), d:rnd(.1, 1.2)}))}),
+      draw(s, p, e, t){
+        tint('#2A0505', .2 * e);
+        const fs = Math.min(W * .9 / s.w.length, H * .2), cy = H * .4;
+        s.sp.forEach(q => { if (t < q.d) return; g.globalAlpha = .55 * e; g.fillStyle = '#B3121A'; g.beginPath(); g.arc(q.x * W, q.y * H, q.r, 0, 6.3); g.fill(); });
+        g.save(); g.globalAlpha = e;
+        const rev = Math.min(1, t / 1.4);
+        g.beginPath(); g.rect(0, 0, W * (.05 + rev * .95), H); g.clip();
+        g.translate(W / 2, cy); g.rotate(-.07);
+        g.font = `900 ${fs}px "ZCOOL XiaoWei","STKaiti","KaiTi",serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.shadowColor = 'rgba(80,0,0,.7)'; g.shadowBlur = 8; g.fillStyle = '#C8141B'; g.fillText(s.w, 0, 0);
+        g.restore();
+        s.drips.forEach(q => { const lt = t - q.d; if (lt < 0) return; const len = Math.min(q.l, lt * .09) * H, x = q.x * W, y0 = cy + fs * .3;
+          g.globalAlpha = .9 * e; g.fillStyle = '#B3121A'; g.fillRect(x - q.w / 2, y0, q.w, len); g.beginPath(); g.arc(x, y0 + len, q.w * .9, 0, 6.3); g.fill(); g.globalAlpha = 1; });
+      }},
+    /* 法院查封：两道封条交叉贴在屏幕上，再盖一个红章 */
+    seal:{init:() => ({}),
+      draw(s, p, e, t){
+        tint('#000000', .28 * e);
+        const L = Math.hypot(W, H) * 1.1, h = Math.max(44, Math.min(70, H * .075));
+        [[-.55, 0], [.55, .4]].forEach(([ang, d]) => {
+          const lt = t - d; if (lt < 0) return;
+          const k = Math.min(1, lt / .22), sc = 1.3 - .3 * k;
+          g.save(); g.globalAlpha = e * k; g.translate(W / 2, H / 2); g.rotate(ang); g.scale(sc, sc);
+          g.fillStyle = '#F7F2E6'; g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 10; g.fillRect(-L / 2, -h / 2, L, h); g.shadowBlur = 0;
+          g.strokeStyle = '#B3121A'; g.lineWidth = 1.5; g.strokeRect(-L / 2, -h / 2 + 4, L, h - 8);
+          g.fillStyle = '#B3121A'; g.font = `700 ${h * .42}px "STKaiti","KaiTi",serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+          for (let x = -L / 2 + h * 2; x < L / 2; x += h * 6) g.fillText('人民法院  封', x, 1);
+          g.restore();
+        });
+        const lt = t - 1; if (lt > 0){
+          const k = Math.min(1, lt / .18), sc = 1.8 - .8 * k, r = Math.min(W, H) * .13;
+          g.save(); g.globalAlpha = e * k * .9; g.translate(W * .68, H * .62); g.rotate(-.2); g.scale(sc, sc);
+          g.strokeStyle = '#C8141B'; g.lineWidth = r * .09; g.beginPath(); g.arc(0, 0, r, 0, 6.3); g.stroke();
+          g.fillStyle = '#C8141B'; g.font = `900 ${r * .95}px "STKaiti","KaiTi",serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('封', 0, r * .05);
+          g.restore();
+        }
+      }},
+    /* 买买买：购物袋和礼盒从天上掉下来，落地弹一下 */
+    bags:{init:() => ({b:many(24, () => ({x:rnd(.04, .96), d:rnd(0, 2.4), v:rnd(.55, .9), s:rnd(.75, 1.3), r0:rnd(-.5, .5), vr:rnd(-1.2, 1.2), c:pick(['#F37021','#0ABAB5','#151515','#E85D8A','#C9A55A','#7B4BB7','#B3121A']), box:Math.random() < .4}))}),
+      draw(s, p, e, t){
+        s.b.forEach(b => {
+          const lt = t - b.d; if (lt < 0) return;
+          const floor = H * (.86 + (b.x * 7 % 1) * .08);
+          let y = -50 + lt * lt * H * b.v, rot = b.r0 + lt * b.vr;
+          if (y > floor){ const over = Math.sqrt((y - floor) / (H * b.v)); y = floor - Math.abs(Math.sin(over * 5)) * 24 * Math.exp(-over * 3); rot = b.r0 * .3; }
+          const w = 30 * b.s, h = 34 * b.s;
+          g.save(); g.globalAlpha = e; g.translate(b.x * W, y); g.rotate(rot);
+          if (b.box){
+            g.fillStyle = b.c; g.fillRect(-w / 2, -w / 2, w, w);
+            g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(-w * .07, -w / 2, w * .14, w); g.fillRect(-w / 2, -w * .07, w, w * .14);
+            g.beginPath(); g.ellipse(-w * .16, -w / 2 - 3, w * .16, w * .1, -.4, 0, 6.3); g.ellipse(w * .16, -w / 2 - 3, w * .16, w * .1, .4, 0, 6.3); g.fill();
+          } else {
+            g.strokeStyle = b.c === '#151515' ? '#555' : '#2B2B2B'; g.lineWidth = 2; g.beginPath(); g.arc(0, -h / 2, w * .25, Math.PI, 0); g.stroke();
+            g.fillStyle = b.c; g.fillRect(-w / 2, -h / 2, w, h);
+            g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(-w / 2, -h / 2, w * .3, h);
+            g.fillStyle = b.c === '#151515' ? '#E8D7A8' : 'rgba(255,255,255,.85)'; g.fillRect(-w * .25, -h * .05, w * .5, 2);
+          }
+          g.restore();
+        });
+      }},
+    /* 被拍到了：此起彼伏的闪光灯 */
+    flash:{init:() => ({f:many(16, (_, i) => ({x:rnd(.06, .94), y:rnd(.08, .85), d:i * .26 + rnd(0, .2), s:rnd(.7, 1.3)}))}),
+      draw(s, p, e, t){
+        let burst = 0;
+        s.f.forEach(f => {
+          const lt = t - f.d; if (lt < 0 || lt > .55) return;
+          if (lt < .07) burst = Math.max(burst, 1 - lt / .07);
+          const a = (1 - lt / .55) * e, R = 110 * f.s, x = f.x * W, y = f.y * H;
+          const gr = g.createRadialGradient(x, y, 0, x, y, R); gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(.25, `rgba(230,240,255,${a * .5})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = gr; g.fillRect(x - R, y - R, R * 2, R * 2);
+          g.strokeStyle = `rgba(255,255,255,${a})`; g.lineWidth = 1.6;
+          for (let k = 0; k < 4; k++){ const ang = k * Math.PI / 4 + .3; g.beginPath(); g.moveTo(x - Math.cos(ang) * R * .7, y - Math.sin(ang) * R * .7); g.lineTo(x + Math.cos(ang) * R * .7, y + Math.sin(ang) * R * .7); g.stroke(); }
+        });
+        if (burst) tint('#FFFFFF', .22 * burst * e);
+      }},
   };
   function start(type){
     const f = FX[type];
@@ -3147,6 +3242,10 @@ function buyGood(cat, it, cheap){
   S.flags.spent = (S.flags.spent || 0) + price; S.assets.lux = (S.assets.lux || 0) + 1;
   let fake = cheap && chance(.25), [h, feel] = joy(price);
   if (k === 'vase' && chance(.35)) fake = true;
+  if (it.fakeP && chance(it.fakeP)) fake = true;
+  S.flags.buys = (S.flags.buys || 0) + 1; if (S.flags.buys >= 15) unlock('shopaholic');
+  if (k === 'jet') unlock('jet');
+  cue('bags');
   if (cat === 'car'){ S.assets.cars.push({n:it.n, v:price, fast:it.fast, i:it.i, a:S.age, s:seed}); if (it.fast) unlock('supercar'); }
   else { S.items = S.items || []; S.items.push({k, i:it.i, n:it.n + (fake ? '（高仿）' : ''), v:fake ? Math.round(price * .02) : price, a:S.age, s:seed, r:fake ? .5 : it.r, fake}); }
   if (k === 'yacht') unlock('yacht');
@@ -3157,8 +3256,8 @@ function buyGood(cat, it, cheap){
 function goodsMenu(cat){
   const G = GOODS[cat], cs = [];
   G.list.forEach(it => {
-    cs.push({l:it.n + (['bag','watch','jewel'].includes(cat) ? '（专柜）' : ''), d:fmt(it.p), dis:() => S.money < it.p || S.ap <= 0, f:() => buyGood(cat, it, false)});
-    if (['bag','watch','jewel'].includes(cat)) cs.push({l:`${it.n}（找代购）`, d:fmt(Math.round(it.p * .7)), dis:() => S.money < it.p * .7 || S.ap <= 0, f:() => buyGood(cat, it, true)});
+    cs.push({l:it.n + (['bag','watch','jewel','wear'].includes(cat) ? '（专柜）' : ''), d:fmt(it.p), dis:() => S.money < it.p || S.ap <= 0, f:() => buyGood(cat, it, false)});
+    if (['bag','watch','jewel','wear'].includes(cat)) cs.push({l:`${it.n}（找代购）`, d:fmt(Math.round(it.p * .7)), dis:() => S.money < it.p * .7 || S.ap <= 0, f:() => buyGood(cat, it, true)});
   });
   cs.push({l:'算了', d:'不消耗行动', f:() => {}});
   modal(G.n, `你现在有 ${fmt(S.money)}。`, cs, '消费', `<div class="shelf">${G.list.map(it => photoCard(it.k || cat, it.i, 7 + it.i, it.n, fmt(it.p))).join('')}</div>`, {wide:true});
@@ -3218,7 +3317,7 @@ function goodsHTML(){
 function showGoods(){
   if (!S || modalOpen) return;
   const html = goodsHTML();
-  modal('我的东西', html ? '' : '你还没有什么值钱的东西。', [{l:'关上'}], `房 ${S.assets.houses.length} · 车 ${S.assets.cars.length} · 物品 ${(S.items || []).length}`, html, {wide:true, free:true});
+  modal('我的东西', html ? '' : '你还没有什么值钱的东西。', [{l:'关上'}], `房 ${S.assets.houses.length} · 车 ${S.assets.cars.length} · 物品 ${(S.items || []).length} · 宠物 ${(S.pets || []).length}`, html, {wide:true, free:true});
 }
 
 /* ---------- 行动的真实反馈：同一年做太多会腻、会累；年年做一样的事会没新鲜感；偶尔还有意外 ---------- */
@@ -3286,7 +3385,7 @@ function doAction(a){
   if (a.modal){ a.f(); afterChange(); return; }
   const rep = S.yr[a.l] = (S.yr[a.l] || 0) + 1, hab = S.hab[a.l] || 0, cat = catOf(a.l), before = {...S.st};
   spend(); a.f();
-  if (S.alive && !S.done) afterEffects(a, cat, rep, hab, before);
+  if (S.alive && !S.done && !flopCheck(a, cat, before)) afterEffects(a, cat, rep, hab, before);
   if (S.alive && !S.done && SIDE[cat] && chance(.08)) pick(SIDE[cat])();
   afterChange();
 }
@@ -3360,8 +3459,8 @@ function debtTick(notes){
 ACTS.push({l:'借钱', m:['uni','adult','old','homeless'], ok:() => S.age >= 18, modal:1, d:() => debtTotal() ? `欠 ${fmt(debtTotal())}` : '', f:() => {
   const steady = S.job || S.biz || S.retired;
   modal('借钱', `你现在有 ${fmt(S.money)}，欠着 ${fmt(debtTotal())}。借来的钱会算进存款，但每年都要连本带利地还。`, [
-    {l:'银行信用贷', d:'10 万 · 年息 8%', dis:() => !steady || S.ap <= 0, f:() => { spend(); if (chance(S.flags.jailed ? .3 : .75)) borrow('银行贷款', 100000, .08); else L(pick(['银行查了你的征信，拒绝了。','客户经理说你的流水不够，下次再来。']), 'b', {happy:-3}); }},
-    {l:'网贷', d:'3 万 · 年息 24%', dis:() => S.ap <= 0, f:() => { spend(); borrow('网贷', 30000, .24); }},
+    {l:'银行信用贷', d:'10 万 · 年息 8%', dis:() => !steady || S.ap <= 0 || S.flags.blacklist, f:() => { spend(); if (chance(S.flags.jailed ? .3 : S.flags.overdue ? .2 : .75)) borrow('银行贷款', 100000, .08); else L(pick(['银行查了你的征信，拒绝了。','客户经理说你的流水不够，下次再来。']), 'b', {happy:-3}); }},
+    {l:'网贷', d:'3 万 · 年息 24%', dis:() => S.ap <= 0, f:() => { spend(); if (S.flags.blacklist && chance(.7)) L('网贷平台查了你的征信，秒拒。', 'b', {happy:-3}); else borrow('网贷', 30000, .24); }},
     {l:'高利贷', d:'20 万 · 年息 36%', dis:() => S.ap <= 0, f:() => { spend(); borrow('高利贷', 200000, .36); }},
     {l:'找亲戚朋友借', d:'不要利息', dis:() => S.ap <= 0, f:() => { spend(); if (chance(.4 + tier() * .1)) borrow('亲戚的钱', R(2, 10) * 10000, 0); else L(pick(['亲戚们都说手头紧。','你打了一圈电话，没人肯借。','表哥借是借了，但从此看你的眼神不一样了。']), 'b', {happy:-4}); }},
     {l:'算了', d:'不消耗行动', f:() => {}},
@@ -3456,7 +3555,7 @@ const bgm = (() => {
   const FXMOOD = {fireworks:'festive', lanterns:'festive', confetti:'festive', balloons:'festive', coins:'festive', glitter:'festive', meteors:'tender',
     petals:'tender', hearts:'tender', sunburst:'tender', birds:'tender', plane:'tender', leaves:'warm', ripples:'zen',
     quake:'tense', fire:'tense', storm:'tense', crash:'tense', heartbeat:'tense', bars:'tense', plague:'tense', flood:'tense',
-    rain:'sad', snow:'cold', ending:'night'};
+    rain:'sad', snow:'cold', ending:'night', paws:'tender', bags:'festive', paint:'tense', seal:'tense', flash:'tense'};
   const SCENEMOOD = {dawn:'child', morning:'child', noon:'calm', afternoon:'calm', golden:'warm', dusk:'old', late:'old', night:'night', rain:'sad', cell:'sad', temple:'zen'};
   const hz = m => 440 * Math.pow(2, (m - 69) / 12);
   function init(){
@@ -3530,6 +3629,11 @@ const bgm = (() => {
     ach:t => melody(t, 84, [0, 4, 7, 12], .09, .08, bell),
     stage:t => { bell(t, 50, .2); bell(t, 57, .12); },
     ending:t => melody(t, 72, [12, 9, 7, 4, 2, 0, -3], .55, .1, bell),
+    paws:t => { melody(t, 79, [0, 4, 7, 4, 9, 7], .22, .11); for (let k = 0; k < 6; k++) bass(t + k * .3, 60, .08, .08); },
+    paint:t => { [0, .5, 1.1, 1.5].forEach(d => noise(t + d, .45, .22, 5000, .5, 'highpass')); bass(t + .2, 36, 1.2, .25); },
+    seal:t => { [0, .4].forEach(d => { bass(t + d, 30, .4, .5); noise(t + d, .15, .4, 400, .8); }); bass(t + 1, 26, .9, .55); noise(t + 1, .2, .5, 300, .8); },
+    bags:t => { bell(t, 96, .1); bell(t + .08, 100, .08); for (let k = 0; k < 8; k++) noise(t + .3 + k * .25, .08, .15, 900, 1.5, 'bandpass'); },
+    flash:t => { for (let k = 0; k < 10; k++){ const d = k * .26 + Math.random() * .1; noise(t + d, .04, .35, 4500, 1, 'highpass'); noise(t + d + .05, .03, .2, 2500, 1, 'highpass'); } },
   };
   function schedule(){
     if (!ac) return;
@@ -4117,6 +4221,1110 @@ DRAW.house = (g, i, r) => {
   }
 };
 
+/* ---------- 新的照片：宠物、数码、服饰、收藏品、新的旅行地 ---------- */
+function rrect(g, x, y, w, h, r){ r = Math.min(r, w / 2, h / 2); g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+const ri = (r, n) => Math.floor(r() * n);
+
+/* 宠物照片的背景：家里的木地板、草坪、笼子、鱼缸、牧场 */
+function petRoom(g, r){
+  const walls = [['#F3E7D3','#E6D4B8'], ['#DDE8EE','#C7D6DF'], ['#F2DCD5','#E2C3B9'], ['#E4EBDD','#CFDAC4']][ri(r, 4)];
+  g.fillStyle = lg(g, 0, 150, [[0, walls[0]], [1, walls[1]]]); g.fillRect(0, 0, 320, 150);
+  g.fillStyle = 'rgba(255,255,255,.32)'; poly(g, [[196, 0], [258, 0], [304, 150], [226, 150]]); g.fill();
+  if (r() < .5){ g.fillStyle = '#FFFFFF'; g.fillRect(28, 26, 54, 40); g.fillStyle = pick(['#9CC3D5','#E8B4A0','#B5C99A']); g.fillRect(32, 30, 46, 32); }
+  else { g.fillStyle = '#6B4A2E'; g.fillRect(36, 96, 6, 50); g.fillStyle = '#C2703D'; g.beginPath(); g.moveTo(26, 150); g.lineTo(30, 126); g.lineTo(48, 126); g.lineTo(52, 150); g.fill(); g.fillStyle = '#3F7D3A'; for (let k = 0; k < 7; k++){ g.beginPath(); g.ellipse(39 + Math.cos(k) * 14, 100 + Math.sin(k * 1.7) * 14, 12, 5, k, 0, 6.29); g.fill(); } }
+  g.fillStyle = '#FFFFFF'; g.fillRect(0, 144, 320, 6);
+  g.fillStyle = lg(g, 150, 220, [[0, '#B98A5E'], [1, '#7E5434']]); g.fillRect(0, 150, 320, 70);
+  g.strokeStyle = 'rgba(60,30,10,.18)'; g.lineWidth = 1; for (let y = 158; y < 220; y += 10){ g.beginPath(); g.moveTo(0, y); g.lineTo(320, y); g.stroke(); }
+  g.globalAlpha = .85; g.fillStyle = ['#C9524A','#3E6E8E','#D9B44A','#7A5C99'][ri(r, 4)]; g.beginPath(); g.ellipse(160, 198, 124, 19, 0, 0, 6.29); g.fill(); g.globalAlpha = 1;
+}
+function petLawn(g, r){
+  g.fillStyle = lg(g, 0, 140, [[0, '#8CC8EE'], [1, '#E3F2F8']]); g.fillRect(0, 0, 320, 220); cloud(g, 40 + r() * 60, 30, .8); cloud(g, 200 + r() * 60, 22, 1);
+  g.fillStyle = '#6E9E5A'; for (let k = 0; k < 9; k++){ g.beginPath(); g.arc(k * 40 + r() * 20, 128, 22 + r() * 12, Math.PI, 0); g.fill(); }
+  g.fillStyle = lg(g, 126, 220, [[0, '#86C062'], [1, '#4E8A34']]); g.fillRect(0, 126, 320, 94);
+  g.strokeStyle = 'rgba(40,90,30,.5)'; g.lineWidth = 1; for (let k = 0; k < 140; k++){ const x = r() * 320, y = 132 + r() * 88; g.beginPath(); g.moveTo(x, y); g.lineTo(x + r() * 3 - 1.5, y - 4 - r() * 4); g.stroke(); }
+  for (let k = 0; k < 14; k++) circ(g, r() * 320, 140 + r() * 70, 1.6, r() < .5 ? '#FFFFFF' : '#F2D23A');
+}
+function petTank(g, r){
+  g.fillStyle = lg(g, 0, 220, [[0, '#7FD3E0'], [1, '#1F7F98']]); g.fillRect(0, 0, 320, 220);
+  for (let k = 0; k < 6; k++){ g.fillStyle = 'rgba(255,255,255,.08)'; poly(g, [[k * 60, 0], [k * 60 + 24, 0], [k * 60 - 30, 220], [k * 60 - 54, 220]]); g.fill(); }
+  g.fillStyle = '#C9B38A'; g.beginPath(); g.moveTo(0, 196); g.quadraticCurveTo(160, 184, 320, 198); g.lineTo(320, 220); g.lineTo(0, 220); g.fill();
+  for (let k = 0; k < 30; k++) circ(g, r() * 320, 198 + r() * 20, 2 + r() * 3, pick(['#9C8A6A','#7E6E52','#B8A27C','#5E6E6A']));
+  g.strokeStyle = '#2E8A4A'; g.lineWidth = 3; g.lineCap = 'round'; for (let k = 0; k < 5; k++){ const x = 20 + k * 70 + r() * 20; g.beginPath(); g.moveTo(x, 200); g.bezierCurveTo(x - 10, 160, x + 12, 130, x - 4, 90 + r() * 30); g.stroke(); }
+  for (let k = 0; k < 12; k++){ g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 1; g.beginPath(); g.arc(250 + Math.sin(k) * 6, 180 - k * 14, 2 + (k % 3), 0, 6.29); g.stroke(); }
+}
+function petCage(g, r){
+  g.fillStyle = lg(g, 0, 220, [[0, ['#F8E6EC','#E6F0F8','#F4F0DA'][ri(r, 3)]], [1, '#E9DCC8']]); g.fillRect(0, 0, 320, 220);
+  g.strokeStyle = 'rgba(150,150,160,.55)'; g.lineWidth = 2; for (let x = 8; x < 320; x += 18){ g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 150); g.stroke(); }
+  g.fillStyle = '#F2DEB0'; g.fillRect(0, 150, 320, 70);
+  for (let k = 0; k < 260; k++){ g.strokeStyle = pick(['#E3C88A','#D4B06A','#F7E7BE','#C9A25A']); g.lineWidth = 1.4; const x = r() * 320, y = 150 + r() * 70, a = r() * 6; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 7, y + Math.sin(a) * 3); g.stroke(); }
+}
+function petField(g, r){
+  g.fillStyle = lg(g, 0, 130, [[0, '#6FB3E3'], [1, '#D9EEF8']]); g.fillRect(0, 0, 320, 220); cloud(g, 60, 34, 1); cloud(g, 230, 26, .8);
+  g.save(); g.scale(320 / 300, 1); mtn(g, r, 120, 40, '#8FA9B8', 2, .4); g.restore();
+  g.fillStyle = lg(g, 118, 220, [[0, '#9CC56A'], [1, '#5E8F3A']]); g.fillRect(0, 118, 320, 102);
+  g.fillStyle = '#F4F1E8'; for (let x = 0; x < 330; x += 40) g.fillRect(x, 120, 4, 30); g.fillRect(0, 126, 320, 3); g.fillRect(0, 140, 320, 3);
+}
+
+/* 狗：坐着正对镜头 */
+function drawDog(g, r, o){
+  const s = o.s || 1, cx = 160, by = 204, C = o.c, C2 = o.c2 || tone(C, .55), D = o.d || tone(C, -.3);
+  floorShadow(g, cx, by, 70 * s, 9, .42);
+  const bh = (o.short ? 66 : 90) * s, top = by - bh;
+  g.lineCap = 'round'; g.strokeStyle = o.tail || D; g.lineWidth = (o.fluffy ? 15 : 9) * s;
+  g.beginPath(); g.moveTo(cx + 26 * s, by - 14 * s);
+  if (o.curl) g.bezierCurveTo(cx + 66 * s, by - 18 * s, cx + 72 * s, by - 66 * s, cx + 44 * s, by - 62 * s);
+  else g.bezierCurveTo(cx + 62 * s, by - 8 * s, cx + 80 * s, by - 34 * s, cx + 74 * s, by - 60 * s);
+  g.stroke();
+  g.beginPath(); g.moveTo(cx - 22 * s, top); g.bezierCurveTo(cx - 56 * s, by - bh * .45, cx - 54 * s, by, cx - 30 * s, by); g.lineTo(cx + 30 * s, by); g.bezierCurveTo(cx + 54 * s, by, cx + 56 * s, by - bh * .45, cx + 22 * s, top); g.closePath();
+  const bg = g.createLinearGradient(cx - 50 * s, 0, cx + 50 * s, 0); bg.addColorStop(0, tone(C, .14)); bg.addColorStop(.6, C); bg.addColorStop(1, D); g.fillStyle = bg; g.fill();
+  if (o.fluffy || o.curly) for (let k = 0; k <= 12; k++){ const t = k / 12, y = top + t * bh, x = (22 + 28 * Math.sin(t * Math.PI * .85)) * s; [-1, 1].forEach(d => circ(g, cx + d * x, y, (o.curly ? 8 : 6) * s, d < 0 ? tone(C, .1) : C)); }
+  g.fillStyle = C2; g.beginPath(); g.ellipse(cx, by - bh * .5, 17 * s, bh * .38, 0, 0, 6.29); g.fill();
+  [-1, 1].forEach(d => { const lx = cx + d * 13 * s; g.fillStyle = o.legs || C; rrect(g, lx - 7 * s, by - bh * .56, 14 * s, bh * .56, 6 * s); g.fill(); g.fillStyle = o.paw || C2; g.beginPath(); g.ellipse(lx, by - 3 * s, 9 * s, 5 * s, 0, 0, 6.29); g.fill(); });
+  const hy = top - 18 * s, hw = 33 * s * (o.hw || 1), hh = 30 * s;
+  if (o.ear === 'up' || o.ear === 'small'){
+    const eh = (o.ear === 'small' ? 16 : 30) * s;
+    [-1, 1].forEach(d => { poly(g, [[cx + d * hw * .2, hy - hh * .62], [cx + d * hw * .98, hy - hh * .3], [cx + d * hw * .72, hy - hh * .58 - eh]]); g.fillStyle = o.earC || D; g.fill(); poly(g, [[cx + d * hw * .38, hy - hh * .6], [cx + d * hw * .82, hy - hh * .42], [cx + d * hw * .68, hy - hh * .5 - eh * .7]]); g.fillStyle = o.earIn || '#E8A79A'; g.fill(); });
+  }
+  const hg = g.createRadialGradient(cx - 10 * s, hy - 10 * s, 4, cx, hy, hw * 1.2); hg.addColorStop(0, tone(C, .18)); hg.addColorStop(1, C);
+  g.fillStyle = hg; g.beginPath(); g.ellipse(cx, hy, hw, hh, 0, 0, 6.29); g.fill();
+  if (o.curly) for (let k = 0; k < 16; k++){ const a = Math.PI + k / 15 * Math.PI; circ(g, cx + Math.cos(a) * hw * .9, hy + Math.sin(a) * hh * .9, 9 * s, tone(C, (k % 3) * .05)); }
+  if (o.mask){
+    g.save(); g.beginPath(); g.ellipse(cx, hy, hw, hh, 0, 0, 6.29); g.clip();
+    g.fillStyle = o.mask; g.fillRect(cx - hw, hy - hh, hw * 2, hh * 1.05);
+    g.fillStyle = C2; g.beginPath(); g.moveTo(cx - hw, hy + hh); g.lineTo(cx - hw, hy + 2 * s); g.quadraticCurveTo(cx - hw * .5, hy - 4 * s, cx - 5 * s, hy - hh * .2); g.lineTo(cx, hy - hh * .75); g.lineTo(cx + 5 * s, hy - hh * .2); g.quadraticCurveTo(cx + hw * .5, hy - 4 * s, cx + hw, hy + 2 * s); g.lineTo(cx + hw, hy + hh); g.fill();
+    g.restore();
+    [-1, 1].forEach(d => { g.fillStyle = C2; g.beginPath(); g.ellipse(cx + d * hw * .42, hy - hh * .36, 5 * s, 3 * s, 0, 0, 6.29); g.fill(); });
+  }
+  if (o.ear === 'flop'){ [-1, 1].forEach(d => { g.save(); g.translate(cx + d * hw * .92, hy - 2 * s); g.rotate(d * .28); g.fillStyle = o.earC || D; g.beginPath(); g.ellipse(0, 12 * s, (o.curly ? 14 : 11) * s, (o.curly ? 26 : 22) * s, 0, 0, 6.29); g.fill(); if (o.curly) for (let k = 0; k < 6; k++) circ(g, (k % 2 ? 5 : -5) * s, (k * 7 - 4) * s, 7 * s, tone(C, -.06)); g.restore(); }); }
+  g.fillStyle = C2; g.beginPath(); g.ellipse(cx, hy + hh * .42, hw * .5, hh * .4, 0, 0, 6.29); g.fill();
+  if (o.tongue !== false){ g.fillStyle = '#E8707A'; g.beginPath(); g.ellipse(cx, hy + hh * .76, 6 * s, 8 * s, 0, 0, 6.29); g.fill(); g.strokeStyle = '#B84A54'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx, hy + hh * .66); g.lineTo(cx, hy + hh * .82); g.stroke(); }
+  g.strokeStyle = '#2A1E1A'; g.lineWidth = 1.6 * s; g.beginPath(); g.moveTo(cx, hy + hh * .3); g.lineTo(cx, hy + hh * .5); g.moveTo(cx - 10 * s, hy + hh * .52); g.quadraticCurveTo(cx - 5 * s, hy + hh * .64, cx, hy + hh * .5); g.quadraticCurveTo(cx + 5 * s, hy + hh * .64, cx + 10 * s, hy + hh * .52); g.stroke();
+  g.fillStyle = '#231915'; g.beginPath(); g.ellipse(cx, hy + hh * .22, 7.5 * s, 5.5 * s, 0, 0, 6.29); g.fill(); circ(g, cx - 2.5 * s, hy + hh * .17, 1.6 * s, 'rgba(255,255,255,.6)');
+  [-1, 1].forEach(d => { const ex = cx + d * hw * .42, ey = hy - hh * .14; circ(g, ex, ey, 5 * s, o.eye || '#1E140F'); if (o.eye) circ(g, ex, ey, 2.4 * s, '#111'); circ(g, ex - 1.4 * s, ey - 1.6 * s, 1.6 * s, 'rgba(255,255,255,.9)'); });
+  if (o.collar !== false){ g.strokeStyle = pick(['#C0392B','#2E6FD8','#2EA35A','#E67E22']); g.lineWidth = 5 * s; g.beginPath(); g.ellipse(cx, top + 4 * s, 22 * s, 6 * s, 0, .2, Math.PI - .2); g.stroke(); circ(g, cx, top + 12 * s, 4.5 * s, '#E2B455'); }
+}
+/* 猫：坐着，尾巴绕到前面 */
+function drawCat(g, r, o){
+  const s = o.s || 1, cx = 160, by = 204, C = o.c, C2 = o.c2 || tone(C, .6), D = o.d || tone(C, -.3), P = o.pt || null;
+  floorShadow(g, cx, by, 62 * s, 8, .42);
+  const bw = (o.fat ? 52 : 42) * s, bh = 86 * s, top = by - bh;
+  g.beginPath(); g.moveTo(cx - 16 * s, top); g.bezierCurveTo(cx - bw, by - bh * .35, cx - bw * 1.05, by, cx - bw * .55, by); g.lineTo(cx + bw * .55, by); g.bezierCurveTo(cx + bw * 1.05, by, cx + bw, by - bh * .35, cx + 16 * s, top); g.closePath();
+  const bg = g.createLinearGradient(cx - bw, 0, cx + bw, 0); bg.addColorStop(0, tone(C, .12)); bg.addColorStop(.6, C); bg.addColorStop(1, D); g.fillStyle = bg; g.fill();
+  if (o.tabby){ g.save(); g.clip(); g.strokeStyle = D; g.lineWidth = 4 * s; for (let k = 0; k < 6; k++){ const y = top + 14 * s + k * 12 * s; [-1, 1].forEach(d => { g.beginPath(); g.moveTo(cx + d * bw, y); g.quadraticCurveTo(cx + d * bw * .55, y + 4 * s, cx + d * bw * .3, y - 2 * s); g.stroke(); }); } g.restore(); }
+  if (o.fluffy) for (let k = 0; k <= 10; k++){ const t = k / 10, y = top + t * bh, x = (16 + (bw / s - 14) * Math.sin(t * Math.PI * .8)) * s; [-1, 1].forEach(d => circ(g, cx + d * x, y, 6 * s, d < 0 ? tone(C, .1) : C)); }
+  g.fillStyle = C2; g.beginPath(); g.ellipse(cx, by - bh * .45, 15 * s, bh * .34, 0, 0, 6.29); g.fill();
+  [-1, 1].forEach(d => { const lx = cx + d * 10 * s; g.fillStyle = C; rrect(g, lx - 6 * s, by - bh * .5, 12 * s, bh * .5, 5 * s); g.fill(); g.fillStyle = P || C2; g.beginPath(); g.ellipse(lx, by - 3 * s, 8 * s, 4.5 * s, 0, 0, 6.29); g.fill(); });
+  g.lineCap = 'round'; g.strokeStyle = P || D; g.lineWidth = (o.fluffy ? 13 : 9) * s; g.beginPath(); g.moveTo(cx + bw * .7, by - 6 * s); g.bezierCurveTo(cx + bw * 1.3, by + 2 * s, cx - 10 * s, by + 8 * s, cx - bw * .9, by - 2 * s); g.stroke();
+  const hy = top - 18 * s, hw = 31 * s * (o.hw || 1), hh = 27 * s, eh = (o.bigEar ? 34 : 26) * s;
+  [-1, 1].forEach(d => { poly(g, [[cx + d * hw * .15, hy - hh * .6], [cx + d * hw * .95, hy - hh * .25], [cx + d * hw * .82, hy - hh * .5 - eh]]); g.fillStyle = P || C; g.fill(); poly(g, [[cx + d * hw * .35, hy - hh * .55], [cx + d * hw * .82, hy - hh * .35], [cx + d * hw * .76, hy - hh * .45 - eh * .7]]); g.fillStyle = '#EFA6A6'; g.fill(); });
+  const hg = g.createRadialGradient(cx - 8 * s, hy - 8 * s, 3, cx, hy, hw * 1.2); hg.addColorStop(0, tone(C, .16)); hg.addColorStop(1, C);
+  g.fillStyle = hg; g.beginPath(); g.ellipse(cx, hy, hw, hh, 0, 0, 6.29); g.fill();
+  if (P){ g.save(); g.beginPath(); g.ellipse(cx, hy, hw, hh, 0, 0, 6.29); g.clip(); const pg = g.createRadialGradient(cx, hy + hh * .3, 2, cx, hy + hh * .2, hw * .85); pg.addColorStop(0, P); pg.addColorStop(.7, tone(P, .25)); pg.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = pg; g.fillRect(cx - hw, hy - hh, hw * 2, hh * 2); g.restore(); }
+  if (o.tabby){ g.strokeStyle = D; g.lineWidth = 3 * s; g.beginPath(); g.moveTo(cx - 9 * s, hy - hh * .45); g.lineTo(cx - 5 * s, hy - hh * .8); g.lineTo(cx, hy - hh * .5); g.lineTo(cx + 5 * s, hy - hh * .8); g.lineTo(cx + 9 * s, hy - hh * .45); g.stroke(); [-1, 1].forEach(d => { g.beginPath(); g.moveTo(cx + d * hw * .98, hy - 2 * s); g.lineTo(cx + d * hw * .66, hy); g.moveTo(cx + d * hw * .96, hy + 6 * s); g.lineTo(cx + d * hw * .7, hy + 6 * s); g.stroke(); }); }
+  if (o.wrinkle){ g.strokeStyle = tone(C, -.2); g.lineWidth = 1.2; for (let k = 0; k < 3; k++){ g.beginPath(); g.moveTo(cx - 10 * s, hy - hh * .5 + k * 5 * s); g.quadraticCurveTo(cx, hy - hh * .58 + k * 5 * s, cx + 10 * s, hy - hh * .5 + k * 5 * s); g.stroke(); } }
+  g.fillStyle = o.muzzle || C2; [-1, 1].forEach(d => { g.beginPath(); g.ellipse(cx + d * 6 * s, hy + hh * .38, 8 * s, 6.5 * s, 0, 0, 6.29); g.fill(); });
+  g.fillStyle = '#E58C96'; poly(g, [[cx - 4 * s, hy + hh * .2], [cx + 4 * s, hy + hh * .2], [cx, hy + hh * .3]]); g.fill();
+  g.strokeStyle = '#3A2A26'; g.lineWidth = 1.2 * s; g.beginPath(); g.moveTo(cx, hy + hh * .3); g.lineTo(cx, hy + hh * .4); g.moveTo(cx - 6 * s, hy + hh * .46); g.quadraticCurveTo(cx - 3 * s, hy + hh * .52, cx, hy + hh * .4); g.quadraticCurveTo(cx + 3 * s, hy + hh * .52, cx + 6 * s, hy + hh * .46); g.stroke();
+  [-1, 1].forEach(d => {
+    const ex = cx + d * hw * .42, ey = hy - hh * .08;
+    g.fillStyle = o.eye || '#9CC95A'; g.beginPath(); g.ellipse(ex, ey, 6.5 * s, 5.5 * s, d * -.12, 0, 6.29); g.fill();
+    g.fillStyle = '#111'; g.beginPath(); g.ellipse(ex, ey, 1.8 * s, 5 * s, 0, 0, 6.29); g.fill(); circ(g, ex - 2 * s, ey - 2 * s, 1.5 * s, 'rgba(255,255,255,.9)');
+    g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = .8; for (let k = -1; k <= 1; k++){ g.beginPath(); g.moveTo(cx + d * 12 * s, hy + hh * .38 + k * 3 * s); g.lineTo(cx + d * 44 * s, hy + hh * .3 + k * 7 * s); g.stroke(); }
+  });
+  if (o.bell){ g.strokeStyle = '#D9302B'; g.lineWidth = 4 * s; g.beginPath(); g.ellipse(cx, top + 4 * s, 18 * s, 5 * s, 0, .2, Math.PI - .2); g.stroke(); circ(g, cx, top + 11 * s, 4.5 * s, '#F2C230'); }
+}
+function drawHamster(g, r, o){
+  const cx = 160, cy = 168;
+  floorShadow(g, cx, 200, 56, 8, .35);
+  const bg = g.createRadialGradient(cx - 14, cy - 18, 6, cx, cy, 62); bg.addColorStop(0, tone(o.c, .25)); bg.addColorStop(1, o.c);
+  g.fillStyle = bg; g.beginPath(); g.ellipse(cx, cy, 56, 44, 0, 0, 6.29); g.fill();
+  g.fillStyle = '#FFF8EE'; g.beginPath(); g.ellipse(cx, cy + 16, 34, 26, 0, 0, 6.29); g.fill();
+  [-1, 1].forEach(d => { circ(g, cx + d * 30, cy - 36, 11, tone(o.c, -.15)); circ(g, cx + d * 30, cy - 36, 6, '#F2B8B8'); });
+  [-1, 1].forEach(d => { circ(g, cx + d * 18, cy - 12, 5, '#151010'); circ(g, cx + d * 18 - 1.5, cy - 14, 1.6, '#FFF'); g.fillStyle = 'rgba(240,140,150,.45)'; g.beginPath(); g.ellipse(cx + d * 30, cy - 2, 9, 5, 0, 0, 6.29); g.fill(); });
+  g.fillStyle = '#E58C96'; g.beginPath(); g.ellipse(cx, cy - 4, 3.5, 2.5, 0, 0, 6.29); g.fill();
+  g.fillStyle = '#6B4A2E'; g.beginPath(); g.ellipse(cx, cy + 10, 6, 10, 0, 0, 6.29); g.fill(); g.strokeStyle = '#F4E7CF'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx, cy + 2); g.lineTo(cx, cy + 18); g.stroke();
+  [-1, 1].forEach(d => circ(g, cx + d * 6, cy + 10, 4, '#F2B8B8'));
+}
+function drawRabbit(g, r, o){
+  const cx = 160, by = 204;
+  floorShadow(g, cx, by, 60, 8, .35);
+  g.fillStyle = o.c; g.beginPath(); g.ellipse(cx, by - 40, 52, 42, 0, 0, 6.29); g.fill();
+  circ(g, cx + 50, by - 30, 12, '#FFFFFF');
+  if (o.c2){ g.fillStyle = o.c2; g.beginPath(); g.ellipse(cx - 18, by - 50, 24, 20, .4, 0, 6.29); g.fill(); }
+  g.fillStyle = '#FFFFFF'; g.beginPath(); g.ellipse(cx - 18, by - 4, 14, 7, 0, 0, 6.29); g.ellipse(cx + 18, by - 4, 14, 7, 0, 0, 6.29); g.fill();
+  const hy = by - 98;
+  g.fillStyle = o.c; g.beginPath(); g.ellipse(cx, hy, 34, 30, 0, 0, 6.29); g.fill();
+  [-1, 1].forEach(d => { g.save(); g.translate(cx + d * 30, hy - 8); g.rotate(d * .25); g.fillStyle = o.c2 || tone(o.c, -.1); g.beginPath(); g.ellipse(0, 26, 11, 34, 0, 0, 6.29); g.fill(); g.fillStyle = '#F2C1C1'; g.beginPath(); g.ellipse(0, 28, 5, 24, 0, 0, 6.29); g.fill(); g.restore(); });
+  [-1, 1].forEach(d => { circ(g, cx + d * 14, hy - 4, 5, '#20140F'); circ(g, cx + d * 14 - 1.5, hy - 6, 1.6, '#FFF'); });
+  g.fillStyle = '#E58C96'; g.beginPath(); g.ellipse(cx, hy + 10, 3.5, 2.5, 0, 0, 6.29); g.fill();
+  g.strokeStyle = '#3A2A26'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx, hy + 12); g.lineTo(cx, hy + 17); g.moveTo(cx - 5, hy + 19); g.quadraticCurveTo(cx, hy + 22, cx, hy + 17); g.quadraticCurveTo(cx, hy + 22, cx + 5, hy + 19); g.stroke();
+  g.fillStyle = '#F07A3A'; g.save(); g.translate(cx + 40, by - 14); g.rotate(-.6); poly(g, [[-4, 0], [4, 0], [0, 26]]); g.fill(); g.fillStyle = '#4E9A3A'; g.beginPath(); g.ellipse(-3, -4, 3, 7, -.4, 0, 6.29); g.ellipse(3, -4, 3, 7, .4, 0, 6.29); g.fill(); g.restore();
+}
+function drawTurtle(g, r){
+  g.fillStyle = '#6E6A60'; g.beginPath(); g.ellipse(160, 186, 110, 28, 0, Math.PI, 0); g.fill(); g.fillStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.ellipse(140, 168, 60, 8, 0, 0, 6.29); g.fill();
+  const cx = 160, cy = 146;
+  g.fillStyle = '#3E5A2A'; [[-50, 10], [46, 12], [-34, 20], [32, 22]].forEach(([dx, dy]) => { g.beginPath(); g.ellipse(cx + dx, cy + dy, 14, 8, dx < 0 ? -.4 : .4, 0, 6.29); g.fill(); });
+  g.fillStyle = '#4E6E34'; g.beginPath(); g.ellipse(cx + 70, cy + 4, 20, 13, .1, 0, 6.29); g.fill();
+  g.fillStyle = '#C8342A'; g.beginPath(); g.ellipse(cx + 64, cy, 7, 3.5, .2, 0, 6.29); g.fill();
+  circ(g, cx + 78, cy - 1, 3, '#1A1A12'); circ(g, cx + 77, cy - 2, 1, '#FFF');
+  g.strokeStyle = '#E2D45A'; g.lineWidth = 1; for (let k = 0; k < 3; k++){ g.beginPath(); g.moveTo(cx + 54, cy + 4 + k * 4); g.lineTo(cx + 86, cy + 2 + k * 4); g.stroke(); }
+  const sh = g.createRadialGradient(cx - 20, cy - 30, 6, cx, cy, 70); sh.addColorStop(0, '#7FA04E'); sh.addColorStop(1, '#2E4A1E');
+  g.fillStyle = sh; g.beginPath(); g.ellipse(cx, cy, 66, 40, 0, Math.PI, 0); g.lineTo(cx + 66, cy + 6); g.lineTo(cx - 66, cy + 6); g.fill();
+  g.strokeStyle = 'rgba(230,220,120,.7)'; g.lineWidth = 2;
+  [[-30, -14], [0, -24], [30, -14], [-44, -2], [44, -2], [-15, -4], [15, -4]].forEach(([dx, dy]) => { g.beginPath(); for (let k = 0; k < 6; k++){ const a = k * Math.PI / 3; g.lineTo(cx + dx + Math.cos(a) * 12, cy + dy + Math.sin(a) * 9); } g.closePath(); g.stroke(); });
+  g.fillStyle = '#D9C66A'; g.fillRect(cx - 66, cy + 2, 132, 5);
+}
+function drawParrot(g, r){
+  g.fillStyle = '#7A5634'; rrect(g, 30, 176, 260, 10, 5); g.fill();
+  const cx = 158, cy = 120;
+  g.fillStyle = '#C8241E'; poly(g, [[cx - 6, cy + 56], [cx + 14, cy + 56], [cx + 18, cy + 92], [cx - 2, cy + 94]]); g.fill();
+  const bg = g.createLinearGradient(cx - 30, cy - 40, cx + 30, cy + 60); bg.addColorStop(0, '#C9CDD2'); bg.addColorStop(1, '#6E747C');
+  g.fillStyle = bg; g.beginPath(); g.ellipse(cx, cy + 16, 30, 46, -.15, 0, 6.29); g.fill();
+  g.fillStyle = '#5E646C'; g.beginPath(); g.ellipse(cx + 12, cy + 22, 18, 38, -.3, 0, 6.29); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 1; for (let k = 0; k < 6; k++){ g.beginPath(); g.arc(cx + 10, cy + 6 + k * 8, 10, .3, 2.6); g.stroke(); }
+  g.fillStyle = '#B9BEC4'; g.beginPath(); g.arc(cx - 6, cy - 34, 24, 0, 6.29); g.fill();
+  g.fillStyle = '#F2F2F0'; g.beginPath(); g.ellipse(cx - 14, cy - 34, 12, 10, 0, 0, 6.29); g.fill();
+  circ(g, cx - 14, cy - 36, 4, '#F4E9C8'); circ(g, cx - 14, cy - 36, 2.2, '#151515');
+  g.fillStyle = '#1A1A1A'; g.beginPath(); g.moveTo(cx - 26, cy - 40); g.bezierCurveTo(cx - 48, cy - 40, cx - 46, cy - 18, cx - 32, cy - 16); g.lineTo(cx - 26, cy - 26); g.fill();
+  g.fillStyle = '#4A4A4A'; [[cx - 6, 178], [cx + 10, 178]].forEach(([x, y]) => { g.beginPath(); g.ellipse(x, y - 2, 6, 4, 0, 0, 6.29); g.fill(); });
+}
+function drawKoi(g, r){
+  g.fillStyle = lg(g, 0, 220, [[0, '#1E5A5E'], [1, '#0B2E33']]); g.fillRect(0, 0, 320, 220);
+  for (let k = 0; k < 14; k++){ g.strokeStyle = 'rgba(180,230,230,.12)'; g.lineWidth = 1; g.beginPath(); g.ellipse(r() * 320, r() * 220, 20 + r() * 30, 6 + r() * 8, 0, 0, 6.29); g.stroke(); }
+  for (let k = 0; k < 4; k++){ const x = r() * 320, y = r() * 220, rr = 18 + r() * 14; g.fillStyle = '#3F8A3A'; g.beginPath(); g.moveTo(x, y); g.arc(x, y, rr, .3, 6.0); g.closePath(); g.fill(); g.strokeStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.moveTo(x, y); g.lineTo(x + rr * .8, y + rr * .3); g.stroke(); if (k === 1){ circ(g, x - 4, y - 4, 7, '#F7C6D6'); circ(g, x - 4, y - 4, 3, '#F2D23A'); } }
+  for (let k = 0; k < 6; k++){
+    const x = 50 + r() * 220, y = 40 + r() * 140, a = r() * 6.28, L = 34 + r() * 14;
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.fillStyle = 'rgba(255,255,255,.75)'; poly(g, [[-L * .55, 0], [-L * .95, -10], [-L * .9, 10]]); g.fill();
+    [-1, 1].forEach(d => { g.beginPath(); g.ellipse(L * .1, d * 9, 7, 3.5, d * .8, 0, 6.29); g.fill(); });
+    g.fillStyle = '#FBF7F0'; g.beginPath(); g.ellipse(0, 0, L * .55, L * .2, 0, 0, 6.29); g.fill();
+    const c = pick(['#E8541E','#D9302B','#F28C28','#1A1A1A']);
+    g.save(); g.beginPath(); g.ellipse(0, 0, L * .55, L * .2, 0, 0, 6.29); g.clip(); g.fillStyle = c;
+    for (let j = 0; j < 3; j++){ g.beginPath(); g.ellipse(-L * .3 + r() * L * .7, (r() - .5) * L * .2, 6 + r() * 7, 5 + r() * 4, r() * 3, 0, 6.29); g.fill(); }
+    g.restore();
+    circ(g, L * .45, -3, 1.4, '#111'); circ(g, L * .45, 3, 1.4, '#111');
+    g.restore();
+  }
+}
+function drawAlpaca(g, r){
+  const cx = 140, by = 200, C = ['#F4EADA','#E8D2AE','#FFFFFF','#C9A27A'][ri(r, 4)];
+  floorShadow(g, cx + 10, by, 78, 8, .35);
+  [[-40, -.08], [-22, 0], [30, -.08], [48, 0]].forEach(([dx, t]) => { g.fillStyle = tone(C, t - .12); rrect(g, cx + dx - 6, by - 62, 12, 60, 5); g.fill(); g.fillStyle = '#4A3A2E'; g.fillRect(cx + dx - 6, by - 6, 12, 6); });
+  const bx = cx + 4, byy = by - 76;
+  g.fillStyle = C; g.beginPath(); g.ellipse(bx, byy, 62, 30, 0, 0, 6.29); g.fill();
+  for (let k = 0; k < 22; k++){ const a = k / 22 * 6.283; circ(g, bx + Math.cos(a) * 58, byy + Math.sin(a) * 26, 11, tone(C, k % 2 ? .06 : -.03)); }
+  g.fillStyle = 'rgba(255,255,255,.25)'; g.beginPath(); g.ellipse(bx - 10, byy - 12, 34, 10, 0, 0, 6.29); g.fill();
+  g.fillStyle = C; rrect(g, cx + 40, by - 168, 26, 96, 13); g.fill();
+  for (let k = 0; k < 8; k++){ circ(g, cx + 40, by - 160 + k * 12, 8, tone(C, k % 2 ? .05 : -.02)); circ(g, cx + 66, by - 156 + k * 12, 8, tone(C, k % 2 ? -.02 : .05)); }
+  const hx = cx + 56, hy = by - 172;
+  g.fillStyle = C; g.beginPath(); g.ellipse(hx, hy, 20, 24, 0, 0, 6.29); g.fill();
+  for (let k = 0; k < 6; k++) circ(g, hx - 14 + k * 5.5, hy - 20 - (k % 2) * 3, 8, tone(C, .08));
+  [-1, 1].forEach(d => { g.fillStyle = tone(C, -.1); g.beginPath(); g.ellipse(hx + d * 14, hy - 30, 5, 13, d * .3, 0, 6.29); g.fill(); });
+  g.fillStyle = tone(C, -.08); g.beginPath(); g.ellipse(hx + 2, hy + 14, 12, 10, 0, 0, 6.29); g.fill();
+  [-1, 1].forEach(d => { circ(g, hx + d * 9, hy - 2, 4.5, '#1A120E'); circ(g, hx + d * 9 - 1.2, hy - 3.5, 1.4, '#FFF'); });
+  g.strokeStyle = '#3A2A26'; g.lineWidth = 1.3; g.beginPath(); g.moveTo(hx - 4, hy + 12); g.lineTo(hx + 4, hy + 12); g.moveTo(hx, hy + 12); g.lineTo(hx, hy + 18); g.stroke();
+}
+function drawSnake(g, r){
+  g.fillStyle = lg(g, 0, 220, [[0, '#2E3A2A'], [1, '#141A12']]); g.fillRect(0, 0, 320, 220);
+  g.fillStyle = '#5E4A34'; g.beginPath(); g.moveTo(0, 170); g.bezierCurveTo(100, 150, 220, 186, 320, 160); g.lineTo(320, 178); g.bezierCurveTo(220, 204, 100, 168, 0, 190); g.fill();
+  g.fillStyle = '#4E7A3A'; for (let k = 0; k < 6; k++){ g.beginPath(); g.ellipse(30 + k * 52, 30 + (k % 2) * 30, 18, 8, k, 0, 6.29); g.fill(); }
+  const cx = 160, cy = 132;
+  g.lineCap = 'round';
+  const path = () => { g.beginPath(); for (let k = 0; k <= 120; k++){ const t = k / 120, a = t * Math.PI * 4.2, rr = 54 - t * 40; const x = cx + Math.cos(a) * rr * 1.25, y = cy + Math.sin(a) * rr * .55; k ? g.lineTo(x, y) : g.moveTo(x, y); } };
+  g.strokeStyle = '#3A2414'; g.lineWidth = 24; path(); g.stroke();
+  g.strokeStyle = '#B88A4E'; g.lineWidth = 20; path(); g.stroke();
+  g.setLineDash([9, 13]); g.strokeStyle = '#3E2614'; g.lineWidth = 14; path(); g.stroke(); g.setLineDash([]);
+  g.fillStyle = '#9C743E'; g.beginPath(); g.ellipse(cx + 14, cy - 8, 16, 11, -.3, 0, 6.29); g.fill();
+  circ(g, cx + 22, cy - 13, 2.4, '#111'); g.strokeStyle = '#E8504E'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(cx + 29, cy - 10); g.lineTo(cx + 38, cy - 12); g.moveTo(cx + 38, cy - 12); g.lineTo(cx + 42, cy - 15); g.moveTo(cx + 38, cy - 12); g.lineTo(cx + 42, cy - 9); g.stroke();
+}
+function drawHorse(g, r){
+  const C = pick(['#7A4A26','#3A2618','#B57A44','#E9E2D6']), M = C === '#E9E2D6' ? '#BDB4A4' : '#1E140E', cx = 150, by = 196;
+  floorShadow(g, cx, by, 90, 8, .35);
+  [[-46, 0], [-30, 6], [34, 0], [50, 6]].forEach(([dx, dy]) => { g.fillStyle = tone(C, dy ? -.15 : 0); rrect(g, cx + dx - 5, by - 66 + dy, 10, 64 - dy, 4); g.fill(); g.fillStyle = '#2A2020'; g.fillRect(cx + dx - 6, by - 6, 12, 6); });
+  g.strokeStyle = M; g.lineWidth = 10; g.lineCap = 'round'; g.beginPath(); g.moveTo(cx - 62, by - 108); g.bezierCurveTo(cx - 86, by - 96, cx - 84, by - 60, cx - 78, by - 40); g.stroke();
+  const bg = g.createLinearGradient(0, by - 130, 0, by - 60); bg.addColorStop(0, tone(C, .2)); bg.addColorStop(1, C);
+  g.fillStyle = bg; g.beginPath(); g.ellipse(cx, by - 96, 66, 32, 0, 0, 6.29); g.fill();
+  g.beginPath(); g.moveTo(cx + 40, by - 118); g.lineTo(cx + 70, by - 170); g.lineTo(cx + 92, by - 160); g.lineTo(cx + 66, by - 96); g.fill();
+  g.save(); g.translate(cx + 84, by - 166); g.rotate(.7); g.beginPath(); g.ellipse(0, 0, 12, 30, 0, 0, 6.29); g.fill(); g.restore();
+  g.fillStyle = M; for (let k = 0; k < 9; k++){ g.beginPath(); g.ellipse(cx + 46 + k * 3.2, by - 122 - k * 5.4, 5, 9, -.5, 0, 6.29); g.fill(); }
+  poly(g, [[cx + 72, by - 186], [cx + 76, by - 198], [cx + 80, by - 184]]); g.fill();
+  circ(g, cx + 86, by - 172, 2.8, '#111'); circ(g, cx + 99, by - 148, 2, '#3A2A26');
+  g.fillStyle = 'rgba(255,255,255,.15)'; g.beginPath(); g.ellipse(cx - 10, by - 112, 40, 8, 0, 0, 6.29); g.fill();
+}
+/* 宠物照片：种类决定背景和主体，seed 决定细节 */
+DRAW.pet = (g, i, r) => {
+  const P = PETS[i] || PETS[0], o = P.art;
+  const bgs = {room:petRoom, lawn:petLawn, tank:petTank, cage:petCage, field:petField};
+  if (o.bg !== 'none') (bgs[o.bg === 'any' ? (r() < .5 ? 'room' : 'lawn') : o.bg] || petRoom)(g, r);
+  ({dog:drawDog, cat:drawCat, hamster:drawHamster, rabbit:drawRabbit, turtle:drawTurtle, parrot:drawParrot, koi:drawKoi, alpaca:drawAlpaca, snake:drawSnake, horse:drawHorse}[o.t])(g, r, o);
+  const v = g.createRadialGradient(160, 110, 100, 160, 110, 220); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.25)'); g.fillStyle = v; g.fillRect(0, 0, 320, 220);
+};
+
+/* 数码 */
+DRAW.tech = (g, i, r) => {
+  studio(g, i === 3 ? false : true);
+  if (i === 0){
+    floorShadow(g, 160, 196, 90, 8, .6);
+    const body = pick([['#4A4F5E','#2E3240'], ['#D9D2C4','#ABA394'], ['#2E3A4E','#1A2232'], ['#E8E6E2','#BDBAB4']]);
+    g.save(); g.translate(122, 110); g.rotate(-.12);
+    rrect(g, -38, -76, 76, 156, 14); g.fillStyle = lg(g, -76, 80, [[0, body[0]], [1, body[1]]]); g.fill();
+    rrect(g, -30, -68, 34, 34, 9); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill();
+    [[-20, -58], [-20, -42], [-6, -50]].forEach(([x, y]) => { circ(g, x, y, 6.5, '#15171C'); circ(g, x, y, 3.5, '#2B3A5A'); circ(g, x - 1.5, y - 1.5, 1.2, 'rgba(255,255,255,.7)'); });
+    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '12px Arial'; g.textAlign = 'center'; g.fillText('', 0, 20); circ(g, 0, 16, 7, 'rgba(255,255,255,.25)');
+    g.restore();
+    g.save(); g.translate(206, 116); g.rotate(.08);
+    rrect(g, -38, -78, 76, 156, 14); g.fillStyle = '#151515'; g.fill();
+    rrect(g, -34, -74, 68, 148, 11); g.fillStyle = lg(g, -74, 74, [[0, '#6A3FD6'], [.5, '#D9468F'], [1, '#F2A33A']]); g.fill();
+    rrect(g, -12, -68, 24, 8, 4); g.fillStyle = '#000'; g.fill();
+    g.fillStyle = '#FFFFFF'; g.font = 'bold 18px Arial'; g.textAlign = 'center'; g.fillText('9:41', 0, -34);
+    g.fillStyle = 'rgba(255,255,255,.18)'; poly(g, [[-34, -74], [-4, -74], [-34, 0]]); g.fill();
+    g.restore();
+  } else if (i === 1){
+    floorShadow(g, 160, 192, 120, 8, .6);
+    poly(g, [[70, 40], [250, 40], [254, 162], [66, 162]]); g.fillStyle = '#1A1C20'; g.fill();
+    poly(g, [[76, 46], [244, 46], [247, 156], [73, 156]]); g.fillStyle = lg(g, 46, 156, [[0, '#1E3C72'], [.55, '#6A82FB'], [1, '#FC5C7D']]); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(76, 46, 168, 9);
+    poly(g, [[60, 162], [260, 162], [292, 190], [28, 190]]); g.fillStyle = steel(g, 28, 162, 292, 190); g.fill();
+    g.fillStyle = '#2A2C30'; for (let row = 0; row < 3; row++) for (let k = 0; k < 13; k++){ const y = 166 + row * 6, sx = 72 - row * 6 + k * 14 + row * 1; g.fillRect(sx, y, 11, 4); }
+    rrect(g, 128, 184, 64, 4, 2); g.fillStyle = 'rgba(0,0,0,.15)'; g.fill();
+  } else if (i === 2){
+    floorShadow(g, 160, 192, 110, 10, .5);
+    g.strokeStyle = '#3A3E44'; g.lineWidth = 8; g.lineCap = 'round';
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([dx, dy]) => { g.beginPath(); g.moveTo(160, 110); g.lineTo(160 + dx * 72, 110 + dy * 46); g.stroke(); });
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([dx, dy]) => { const x = 160 + dx * 72, y = 110 + dy * 46; g.fillStyle = 'rgba(200,205,215,.35)'; g.beginPath(); g.ellipse(x, y, 38, 14, 0, 0, 6.29); g.fill(); circ(g, x, y, 6, '#22252A'); g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 1; g.beginPath(); g.ellipse(x, y, 30, 10, 0, 0, 6.29); g.stroke(); });
+    rrect(g, 124, 88, 72, 44, 14); g.fillStyle = steel(g, 124, 88, 196, 132); g.fill();
+    rrect(g, 140, 96, 40, 10, 5); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill();
+    g.fillStyle = '#22252A'; rrect(g, 150, 130, 20, 12, 3); g.fill(); circ(g, 160, 148, 9, '#2B2E33'); circ(g, 160, 148, 5, '#1B2A44'); circ(g, 158, 146, 1.6, 'rgba(255,255,255,.7)');
+  } else {
+    floorShadow(g, 140, 198, 80, 8, .45);
+    g.beginPath(); g.moveTo(108, 196); g.bezierCurveTo(96, 120, 100, 60, 120, 18); g.lineTo(136, 18); g.lineTo(136, 196); g.closePath(); g.fillStyle = '#F7F7F5'; g.fill();
+    g.fillStyle = '#16171A'; g.fillRect(136, 24, 22, 172);
+    g.beginPath(); g.moveTo(186, 196); g.bezierCurveTo(198, 120, 194, 60, 174, 18); g.lineTo(158, 18); g.lineTo(158, 196); g.closePath(); g.fillStyle = '#ECECEA'; g.fill();
+    g.fillStyle = 'rgba(80,130,255,.7)'; g.fillRect(136, 24, 22, 3);
+    g.save(); g.translate(234, 176);
+    g.fillStyle = '#F4F4F2'; g.beginPath(); g.moveTo(-44, -6); g.bezierCurveTo(-50, 24, -30, 30, -22, 12); g.lineTo(22, 12); g.bezierCurveTo(30, 30, 50, 24, 44, -6); g.bezierCurveTo(40, -20, -40, -20, -44, -6); g.fill();
+    g.fillStyle = '#1A1A1A'; rrect(g, -18, -14, 36, 16, 5); g.fill();
+    circ(g, -12, 4, 6, '#2A2A2A'); circ(g, 12, 4, 6, '#2A2A2A');
+    [['#3AB0FF', 28, -8], ['#FF5A5F', 34, -2], ['#3ADB8A', 28, 4], ['#F2C230', 22, -2]].forEach(([c, x, y]) => circ(g, x, y, 2.4, c));
+    g.fillStyle = '#4A4A4A'; g.fillRect(-34, -6, 10, 3); g.fillRect(-30.5, -9.5, 3, 10);
+    g.restore();
+  }
+  vignette(g);
+};
+/* 服饰 */
+DRAW.wear = (g, i, r) => {
+  studio(g, i === 2);
+  if (i === 0){
+    floorShadow(g, 156, 188, 130, 9, .5);
+    const red = '#C8102E', blk = '#16161A', wht = '#F7F5F0';
+    const upper = () => { g.beginPath(); g.moveTo(42, 170); g.bezierCurveTo(38, 148, 66, 136, 112, 130); g.lineTo(162, 90); g.lineTo(168, 60); g.lineTo(238, 54); g.quadraticCurveTo(262, 58, 264, 96); g.lineTo(266, 170); g.closePath(); };
+    upper(); g.fillStyle = wht; g.fill();
+    g.save(); upper(); g.clip();
+    g.fillStyle = red; g.beginPath(); g.ellipse(58, 172, 74, 40, 0, 0, 6.29); g.fill();
+    g.fillStyle = red; g.beginPath(); g.moveTo(206, 180); g.lineTo(214, 110); g.quadraticCurveTo(232, 96, 270, 100); g.lineTo(270, 180); g.fill();
+    g.fillStyle = blk; poly(g, [[166, 52], [270, 44], [270, 92], [246, 100], [178, 102]]); g.fill();
+    g.fillStyle = blk; poly(g, [[104, 136], [158, 86], [180, 98], [128, 146]]); g.fill();
+    g.strokeStyle = blk; g.lineWidth = 9; g.lineCap = 'round'; g.beginPath(); g.moveTo(96, 160); g.bezierCurveTo(150, 150, 196, 128, 236, 92); g.stroke();
+    g.setLineDash([2, 2]); g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = .8; upper(); g.stroke(); g.setLineDash([]);
+    g.restore();
+    g.strokeStyle = wht; g.lineWidth = 2; for (let k = 0; k < 5; k++){ const t = k / 4, x = 116 + t * 46, y = 134 - t * 42; g.beginPath(); g.moveTo(x - 6, y - 6); g.lineTo(x + 12, y + 8); g.stroke(); }
+    g.fillStyle = blk; rrect(g, 166, 46, 22, 30, 4); g.fill(); g.fillStyle = red; g.font = 'bold 8px Arial'; g.textAlign = 'center'; g.fillText('23', 177, 64); g.textAlign = 'left';
+    g.fillStyle = wht; rrect(g, 34, 166, 238, 16, 7); g.fill();
+    g.fillStyle = red; g.fillRect(38, 180, 230, 5);
+    g.strokeStyle = 'rgba(0,0,0,.15)'; g.lineWidth = 1; g.beginPath(); g.moveTo(40, 174); g.lineTo(268, 174); g.stroke();
+  } else if (i === 1){
+    floorShadow(g, 160, 200, 100, 8, .45);
+    const c = pick(['#1F2A44','#8E1B17','#2E3B2A','#1A1A1A','#C8A464']);
+    g.fillStyle = tone(c, -.15);
+    [[-1], [1]].forEach(([d]) => { g.beginPath(); g.moveTo(160 + d * 50, 66); g.bezierCurveTo(160 + d * 92, 80, 160 + d * 100, 150, 160 + d * 96, 196); g.lineTo(160 + d * 72, 196); g.lineTo(160 + d * 64, 100); g.fill(); });
+    g.fillStyle = c; g.beginPath(); g.moveTo(108, 70); g.quadraticCurveTo(160, 50, 212, 70); g.lineTo(222, 200); g.lineTo(98, 200); g.closePath(); g.fill();
+    g.strokeStyle = tone(c, -.3); g.lineWidth = 2; for (let y = 96; y < 200; y += 22){ g.beginPath(); g.moveTo(102, y); g.quadraticCurveTo(160, y + 6, 218, y); g.stroke(); }
+    g.strokeStyle = tone(c, -.35); g.lineWidth = 3; g.beginPath(); g.moveTo(160, 64); g.lineTo(160, 200); g.stroke();
+    for (let k = 0; k < 22; k++){ const a = Math.PI + k / 21 * Math.PI; circ(g, 160 + Math.cos(a) * 52, 62 + Math.sin(a) * 26, 7, k % 2 ? '#CDBFA8' : '#E8DCC6'); }
+    g.fillStyle = '#B0A08A'; g.beginPath(); g.ellipse(160, 58, 34, 18, 0, Math.PI, 0); g.fill();
+    circ(g, 194, 104, 12, '#F4F1EA'); g.strokeStyle = '#C8102E'; g.lineWidth = 2; g.beginPath(); g.arc(194, 104, 9, 0, 6.29); g.stroke(); circ(g, 194, 104, 4, '#1F4E9C');
+  } else {
+    g.strokeStyle = '#B8A07A'; g.lineWidth = 4; g.beginPath(); g.moveTo(160, 18); g.lineTo(160, 32); g.moveTo(112, 54); g.lineTo(160, 32); g.lineTo(208, 54); g.stroke();
+    g.strokeStyle = '#C9CED6'; g.lineWidth = 2; g.beginPath(); g.arc(160, 14, 6, Math.PI, Math.PI * 2.5); g.stroke();
+    const c = pick(['#1B2440','#2A2A2E','#3B3530']);
+    g.fillStyle = c; g.beginPath(); g.moveTo(104, 56); g.lineTo(140, 44); g.lineTo(160, 120); g.lineTo(180, 44); g.lineTo(216, 56); g.lineTo(224, 206); g.lineTo(96, 206); g.closePath(); g.fill();
+    g.fillStyle = '#F7F7F5'; poly(g, [[140, 44], [180, 44], [160, 120]]); g.fill();
+    g.fillStyle = '#8E1B2A'; poly(g, [[155, 50], [165, 50], [168, 112], [160, 124], [152, 112]]); g.fill();
+    g.fillStyle = tone(c, .12); poly(g, [[140, 44], [128, 58], [146, 104], [160, 120]]); g.fill(); poly(g, [[180, 44], [192, 58], [174, 104], [160, 120]]); g.fill();
+    [140, 160].forEach(y => circ(g, 166, y + 10, 3, '#111'));
+    g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(96, 56, 20, 150);
+    g.fillStyle = '#F7F7F5'; poly(g, [[198, 76], [214, 72], [212, 82], [200, 84]]); g.fill();
+  }
+  vignette(g);
+};
+/* 收藏：字画、白酒、金条、私人飞机 */
+DRAW.painting = (g, i, r, seed, text) => {
+  g.fillStyle = lg(g, 0, 220, [[0, '#5B4636'], [1, '#3A2C22']]); g.fillRect(0, 0, 320, 220);
+  g.fillStyle = '#2B1E16'; g.fillRect(100, 6, 120, 8); g.fillRect(100, 206, 120, 8);
+  g.fillStyle = '#C9B48A'; g.fillRect(104, 12, 112, 196);
+  g.fillStyle = '#F2EAD6'; g.fillRect(112, 22, 96, 176);
+  g.fillStyle = 'rgba(160,130,80,.08)'; for (let k = 0; k < 40; k++) g.fillRect(112 + r() * 96, 22 + r() * 176, 2, 2);
+  for (let k = 0; k < 5; k++){
+    const x = 128 + (k % 2) * 34 + r() * 12, y = 70 + k * 24 + r() * 6, a = -.5 + r() * .8;
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.strokeStyle = 'rgba(40,40,40,.85)'; g.lineWidth = 2.2; g.lineCap = 'round';
+    for (let j = 0; j < 6; j++){ g.beginPath(); g.arc(j * 4.2, Math.sin(j * .7) * 3, 4.5 - j * .4, -1.2, 1.2); g.stroke(); }
+    g.fillStyle = 'rgba(30,30,30,.85)'; g.beginPath(); g.ellipse(-4, 0, 6, 4, 0, 0, 6.29); g.fill();
+    g.lineWidth = .7; g.beginPath(); g.moveTo(-8, -1); g.bezierCurveTo(-30, -16, -42, -6, -52, -18); g.moveTo(-8, 1); g.bezierCurveTo(-28, 8, -38, 18, -50, 14); g.stroke();
+    g.lineWidth = 1.6; g.beginPath(); g.moveTo(-6, 3); g.quadraticCurveTo(-18, 12, -24, 6); g.moveTo(-5, -3); g.quadraticCurveTo(-18, -12, -22, -6); g.stroke();
+    g.restore();
+  }
+  g.fillStyle = 'rgba(30,30,30,.8)'; for (let k = 0; k < 7; k++) g.fillRect(196, 32 + k * 8, 5, 5);
+  g.fillStyle = '#C0392B'; g.fillRect(193, 94, 10, 10); g.fillStyle = '#F2EAD6'; g.fillRect(195, 96, 2, 6); g.fillRect(199, 96, 2, 6);
+};
+DRAW.liquor = (g, i, r) => {
+  studio(g, false);
+  floorShadow(g, 170, 198, 110, 9, .5);
+  g.fillStyle = lg(g, 50, 200, [[0, '#D9302B'], [1, '#8E1B17']]); g.fillRect(56, 60, 88, 140);
+  g.fillStyle = '#F2C230'; g.fillRect(56, 60, 88, 6); g.fillRect(56, 194, 88, 6);
+  label(g, '飞天', 100, 120, 20, '#F2D58A'); label(g, '53%vol', 100, 150, 9, '#F2D58A', 'Arial');
+  const cx = 200;
+  g.fillStyle = lg(g, 0, 0, [[0, '#FFFFFF'], [1, '#FFFFFF']]);
+  const bg = g.createLinearGradient(cx - 30, 0, cx + 30, 0); bg.addColorStop(0, '#E4E2DC'); bg.addColorStop(.35, '#FFFFFF'); bg.addColorStop(1, '#BDB9B0');
+  g.fillStyle = bg; g.beginPath(); g.moveTo(cx - 14, 40); g.lineTo(cx + 14, 40); g.lineTo(cx + 16, 70); g.bezierCurveTo(cx + 32, 80, cx + 32, 90, cx + 32, 110); g.lineTo(cx + 32, 196); g.lineTo(cx - 32, 196); g.lineTo(cx - 32, 110); g.bezierCurveTo(cx - 32, 90, cx - 32, 80, cx - 16, 70); g.closePath(); g.fill();
+  g.fillStyle = '#C8241E'; g.fillRect(cx - 16, 30, 32, 16);
+  g.strokeStyle = '#C8241E'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 8, 46); g.quadraticCurveTo(cx - 20, 70, cx - 26, 84); g.moveTo(cx + 8, 46); g.quadraticCurveTo(cx + 22, 70, cx + 26, 86); g.stroke();
+  g.fillStyle = '#C8241E'; g.fillRect(cx - 32, 118, 64, 54);
+  g.fillStyle = '#F2C230'; g.fillRect(cx - 32, 118, 64, 3); g.fillRect(cx - 32, 169, 64, 3);
+  label(g, '茅台', cx, 150, 16, '#F7E7B0');
+};
+DRAW.goldbar = (g, i, r) => {
+  studio(g, true);
+  floorShadow(g, 160, 182, 120, 10, .7);
+  const bar = (x, y, s) => {
+    poly(g, [[x - 70 * s, y], [x + 70 * s, y], [x + 54 * s, y - 34 * s], [x - 54 * s, y - 34 * s]]); g.fillStyle = gold(g, x - 70 * s, y - 34 * s, x + 70 * s, y); g.fill();
+    poly(g, [[x - 54 * s, y - 34 * s], [x + 54 * s, y - 34 * s], [x + 44 * s, y - 44 * s], [x - 44 * s, y - 44 * s]]); g.fillStyle = '#FFF2C2'; g.fill();
+    g.strokeStyle = 'rgba(120,80,20,.5)'; g.lineWidth = 1; g.strokeRect(x - 40 * s, y - 30 * s, 80 * s, 24 * s);
+    g.fillStyle = 'rgba(120,80,20,.75)'; g.font = `bold ${10 * s}px Arial`; g.textAlign = 'center'; g.fillText('1000g', x, y - 20 * s); g.font = `${8 * s}px Arial`; g.fillText('Au 999.9', x, y - 10 * s); g.textAlign = 'left';
+  };
+  bar(160, 176, 1.15); sparkle(g, 210, 128, 8); sparkle(g, 118, 140, 5);
+  vignette(g);
+};
+DRAW.jet = (g, i, r) => {
+  g.fillStyle = lg(g, 0, 220, [[0, '#2F7DD1'], [1, '#BFE0F7']]); g.fillRect(0, 0, 320, 220); cloud(g, 30, 160, 1.4, .8); cloud(g, 220, 170, 1.6, .8); cloud(g, 250, 40, .8, .6);
+  g.save(); g.translate(160, 108); g.rotate(-.08);
+  g.fillStyle = lg(g, -20, 20, [[0, '#FFFFFF'], [1, '#C9D2DA']]);
+  g.beginPath(); g.moveTo(-130, 4); g.bezierCurveTo(-130, -14, -100, -18, -60, -18); g.lineTo(90, -16); g.bezierCurveTo(118, -14, 132, -4, 136, 4); g.bezierCurveTo(120, 14, 90, 16, 60, 16); g.lineTo(-90, 14); g.bezierCurveTo(-118, 14, -130, 10, -130, 4); g.fill();
+  g.fillStyle = '#E8EDF2'; poly(g, [[-110, -12], [-140, -60], [-120, -62], [-84, -14]]); g.fill();
+  g.fillStyle = '#C9D2DA'; poly(g, [[-150, -62], [-104, -64], [-106, -56], [-146, -56]]); g.fill();
+  g.fillStyle = '#AEB8C2'; poly(g, [[-20, 8], [40, 8], [-10, 52], [-34, 52]]); g.fill();
+  g.fillStyle = '#9AA6B2'; rrect(g, -96, -26, 40, 14, 7); g.fill();
+  g.fillStyle = '#1F3550'; for (let k = 0; k < 8; k++){ g.beginPath(); g.ellipse(-40 + k * 14, -6, 4, 5, 0, 0, 6.29); g.fill(); }
+  g.fillStyle = '#1F3550'; poly(g, [[96, -12], [118, -8], [124, -2], [100, -4]]); g.fill();
+  g.fillStyle = '#1F4E9C'; g.fillRect(-120, 6, 230, 3);
+  g.restore();
+};
+
+/* 新的旅行地：21 起，和 DEST 的顺序一致 */
+TV[21] = (g, r) => { // 桂林
+  skyFill(g, '#A9C9D6', '#E8F0EC');
+  const karst = (x, w, h, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(x - w, 132); g.bezierCurveTo(x - w, 132 - h * .6, x - w * .5, 132 - h, x, 132 - h); g.bezierCurveTo(x + w * .5, 132 - h, x + w, 132 - h * .6, x + w, 132); g.fill(); };
+  [[20, 22, 70], [70, 26, 96], [120, 20, 64], [170, 28, 100], [222, 22, 80], [270, 26, 92], [310, 20, 60]].forEach(([x, w, h], k) => karst(x, w, h * .8, 'rgba(110,140,130,.7)'));
+  [[40, 26, 80], [110, 32, 110], [200, 30, 90], [280, 28, 104]].forEach(([x, w, h]) => karst(x, w, h, '#4E7A5A'));
+  water(g, 132, '#8FB8B0', '#4E7E78', .3);
+  mirror(g, 132, .25, () => [[40, 26, 80], [110, 32, 110], [200, 30, 90], [280, 28, 104]].forEach(([x, w, h]) => karst(x, w, h, '#4E7A5A')));
+  g.fillStyle = '#6B4A2E'; poly(g, [[110, 168], [190, 164], [186, 172], [114, 176]]); g.fill();
+  g.fillStyle = '#3A3A3A'; circ(g, 160, 152, 5, '#2A2A2A'); g.fillRect(157, 156, 6, 10);
+  g.strokeStyle = '#5A4A3A'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(166, 156); g.lineTo(196, 130); g.stroke();
+  g.fillStyle = '#C9B48A'; g.beginPath(); g.ellipse(160, 147, 9, 3, 0, 0, 6.29); g.fill();
+};
+TV[22] = (g, r) => { // 张家界
+  skyFill(g, '#9FB8C8', '#E8EEF0');
+  const pillar = (x, w, top, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(x - w, 200); g.lineTo(x - w * .9, top + 10); g.quadraticCurveTo(x, top - 6, x + w * .9, top + 8); g.lineTo(x + w, 200); g.fill(); g.fillStyle = '#3F6B3A'; for (let k = 0; k < 5; k++) circ(g, x - w * .7 + k * w * .35, top + 2 + (k % 2) * 3, w * .3, '#3F6B3A'); };
+  [[30, 14, 60], [90, 12, 40], [150, 18, 30], [210, 12, 50], [270, 16, 36]].forEach(([x, w, t]) => pillar(x, w, t + 30, 'rgba(120,130,120,.6)'));
+  g.fillStyle = 'rgba(255,255,255,.75)'; g.fillRect(0, 120, 300, 40);
+  [[60, 20, 50], [130, 24, 30], [230, 22, 44]].forEach(([x, w, t]) => pillar(x, w, t, '#7A7A6E'));
+  g.fillStyle = 'rgba(255,255,255,.85)'; for (let k = 0; k < 6; k++) cloud(g, k * 55, 166 + (k % 2) * 8, 1.3, .85);
+};
+TV[23] = (g, r) => { // 哈尔滨冰雪大世界
+  skyFill(g, '#0A1030', '#1E2A5A', '#3A2A6A');
+  for (let k = 0; k < 60; k++) circ(g, r() * 300, r() * 90, .8, 'rgba(255,255,255,.7)');
+  const ice = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(x, y, w * .2, h); };
+  const cols = ['rgba(120,200,255,.85)', 'rgba(255,120,200,.8)', 'rgba(140,255,200,.8)', 'rgba(255,220,120,.85)'];
+  ice(40, 100, 40, 80, cols[0]); poly(g, [[36, 100], [60, 60], [84, 100]]); g.fillStyle = cols[0]; g.fill();
+  ice(110, 70, 80, 110, cols[1]); poly(g, [[106, 70], [150, 18], [194, 70]]); g.fillStyle = cols[1]; g.fill();
+  ice(220, 96, 46, 84, cols[2]); poly(g, [[216, 96], [243, 56], [270, 96]]); g.fillStyle = cols[2]; g.fill();
+  glowAt(g, 150, 120, 120, '160,120,255', .35);
+  g.fillStyle = '#E8F2FA'; g.fillRect(0, 180, 300, 20);
+  for (let k = 0; k < 20; k++) circ(g, 15 + k * 15, 178, 2.2, cols[k % 4]);
+};
+TV[24] = (g, r) => { // 敦煌
+  skyFill(g, '#E8A25A', '#F6D39A', '#F7E3BC');
+  circ(g, 230, 60, 18, '#FFF3D6'); glowAt(g, 230, 60, 70, '255,220,160', .5);
+  g.fillStyle = '#D9A55E'; g.beginPath(); g.moveTo(0, 120); g.bezierCurveTo(60, 70, 120, 80, 160, 110); g.bezierCurveTo(200, 70, 260, 60, 300, 100); g.lineTo(300, 200); g.lineTo(0, 200); g.fill();
+  g.fillStyle = '#B9803E'; g.beginPath(); g.moveTo(160, 110); g.bezierCurveTo(200, 70, 260, 60, 300, 100); g.lineTo(300, 140); g.bezierCurveTo(250, 100, 200, 110, 160, 110); g.fill();
+  g.fillStyle = '#4FA0A0'; g.beginPath(); g.moveTo(80, 160); g.quadraticCurveTo(130, 140, 180, 160); g.quadraticCurveTo(130, 150, 80, 160); g.fill();
+  g.fillStyle = '#7A4A2E'; g.fillRect(120, 136, 18, 12); poly(g, [[116, 137], [129, 128], [142, 137]]); g.fill();
+  for (let k = 0; k < 5; k++){ const x = 40 + k * 26, y = 104 - k * 4; g.fillStyle = '#5E3A20'; g.beginPath(); g.ellipse(x, y, 8, 4, 0, 0, 6.29); g.fill(); g.fillRect(x - 6, y + 2, 2, 7); g.fillRect(x + 4, y + 2, 2, 7); g.beginPath(); g.ellipse(x + 8, y - 5, 3, 4, 0, 0, 6.29); g.fill(); }
+};
+TV[25] = (g, r) => { // 曼谷
+  skyFill(g, '#4FA3E0', '#CFE9F8');
+  const spire = (x, base, h, w) => { g.fillStyle = gold(g, x - w, base - h, x + w, base); g.beginPath(); g.moveTo(x - w, base); g.quadraticCurveTo(x - w * .6, base - h * .4, x - 2, base - h); g.lineTo(x + 2, base - h); g.quadraticCurveTo(x + w * .6, base - h * .4, x + w, base); g.fill(); for (let k = 1; k < 6; k++){ g.fillStyle = 'rgba(160,100,20,.5)'; g.fillRect(x - w * (1 - k / 6), base - h * k / 7, w * 2 * (1 - k / 6), 1.4); } };
+  spire(80, 150, 120, 26); spire(160, 150, 90, 20); spire(232, 150, 110, 24);
+  g.fillStyle = '#E8D9B0'; g.fillRect(30, 150, 240, 20);
+  roofTier(g, 160, 150, 70, 14, '#C8341E', '#F2C230'); roofTier(g, 160, 138, 50, 12, '#2E7D5A', '#F2C230');
+  g.fillStyle = '#B8A88A'; g.fillRect(0, 170, 300, 30);
+  for (let k = 0; k < 8; k++){ g.fillStyle = pick(['#F28C28','#2EA35A','#3E78C8']); g.beginPath(); g.ellipse(20 + k * 38, 180, 7, 3, 0, 0, 6.29); g.fill(); }
+};
+TV[26] = (g, r) => { // 圣托里尼
+  skyFill(g, '#F0A36A', '#F7D2A2', '#F7E2C2');
+  circ(g, 236, 112, 18, '#FFDCA0'); glowAt(g, 236, 112, 80, '255,200,140', .55);
+  water(g, 118, '#3B6E9E', '#1C3C66', .3);
+  g.fillStyle = '#B88A6A'; g.beginPath(); g.moveTo(0, 60); g.bezierCurveTo(70, 70, 110, 110, 150, 200); g.lineTo(0, 200); g.fill();
+  const house = (x, y, w, h, dome) => { g.fillStyle = '#FAFAF7'; g.fillRect(x, y, w, h); g.fillStyle = 'rgba(0,0,0,.08)'; g.fillRect(x + w * .7, y, w * .3, h); if (dome){ g.fillStyle = '#1F5FB0'; g.beginPath(); g.arc(x + w / 2, y, w / 2, Math.PI, 0); g.fill(); g.fillStyle = '#FAFAF7'; g.fillRect(x + w / 2 - 1, y - w / 2 - 6, 2, 6); } else { g.fillStyle = '#2E78C8'; g.fillRect(x + w * .35, y + h * .4, w * .3, h * .6); } };
+  [[6, 72, 20, 18, 0], [30, 80, 16, 16, 1], [52, 92, 22, 18, 0], [10, 100, 24, 20, 0], [40, 116, 20, 16, 1], [70, 112, 18, 18, 0], [20, 132, 26, 20, 0], [56, 140, 22, 18, 0], [90, 136, 20, 18, 1], [30, 158, 24, 20, 0], [70, 166, 26, 20, 0], [104, 162, 18, 16, 0]].forEach(a => house(...a));
+};
+TV[27] = (g, r) => { // 罗马
+  skyFill(g, '#5AA0D8', '#E2EEF4');
+  g.fillStyle = '#C9A57A'; g.beginPath(); g.moveTo(30, 180); g.lineTo(30, 70); g.quadraticCurveTo(150, 40, 270, 60); g.lineTo(270, 180); g.fill();
+  g.fillStyle = '#B08A5E'; g.beginPath(); g.moveTo(200, 180); g.lineTo(206, 56); g.quadraticCurveTo(250, 50, 270, 60); g.lineTo(270, 180); g.fill();
+  g.fillStyle = '#5E4636';
+  for (let row = 0; row < 3; row++) for (let k = 0; k < 9; k++){ const x = 40 + k * 18 + row * 2, y = 82 + row * 32; if (x > 196 && row === 0) continue; g.beginPath(); g.moveTo(x, y + 24); g.lineTo(x, y + 8); g.arc(x + 6, y + 8, 6, Math.PI, 0); g.lineTo(x + 12, y + 24); g.fill(); }
+  g.fillStyle = '#D9BC92'; for (let row = 0; row < 3; row++) g.fillRect(30, 78 + row * 32, 176, 4);
+  g.fillStyle = '#9A8A6E'; g.fillRect(0, 180, 300, 20);
+  pine(g, 280, 182, 50, '#2E5A2A'); pine(g, 14, 182, 40, '#2E5A2A');
+};
+TV[28] = (g, r) => { // 伦敦
+  skyFill(g, '#7C8EA0', '#C8D2DA');
+  for (let k = 0; k < 4; k++) cloud(g, k * 80, 30 + (k % 2) * 16, 1.2, .7);
+  g.fillStyle = '#C9A86A'; g.fillRect(170, 40, 40, 150); poly(g, [[166, 40], [190, 4], [214, 40]]); g.fill();
+  g.fillStyle = '#E9E2C6'; circ(g, 190, 62, 14, '#E9E2C6'); g.strokeStyle = '#3A2A1A'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(190, 62); g.lineTo(190, 52); g.moveTo(190, 62); g.lineTo(197, 64); g.stroke();
+  g.fillStyle = '#A88A52'; for (let k = 0; k < 6; k++) g.fillRect(174 + k * 6, 84, 2, 100);
+  g.fillStyle = '#B89A62'; g.fillRect(212, 110, 90, 80);
+  g.fillStyle = '#4E5E6A'; g.fillRect(0, 186, 300, 14);
+  g.fillStyle = '#C8102E'; rrect(g, 60, 128, 26, 58, 3); g.fill(); g.fillStyle = 'rgba(255,255,255,.55)'; for (let row = 0; row < 4; row++) for (let k = 0; k < 2; k++) g.fillRect(64 + k * 10, 138 + row * 10, 8, 8);
+  g.fillStyle = '#C8102E'; rrect(g, 100, 150, 60, 34, 4); g.fill(); g.fillStyle = 'rgba(255,255,255,.6)'; for (let k = 0; k < 4; k++) g.fillRect(104 + k * 14, 156, 10, 8); circ(g, 112, 186, 5, '#111'); circ(g, 148, 186, 5, '#111');
+};
+TV[29] = (g, r) => { // 迪拜
+  skyFill(g, '#F2A86A', '#F6D7A6', '#F9E7C8');
+  g.fillStyle = 'rgba(120,110,120,.5)'; [[20, 110], [44, 90], [70, 120], [220, 100], [250, 80], [278, 116]].forEach(([x, h]) => g.fillRect(x, 180 - h, 18, h));
+  const cx = 150; g.fillStyle = lg(g, 0, 0, [[0, '#8EA6BC'], [1, '#5E7A94']]);
+  g.fillStyle = '#7E96AE';
+  [[24, 180, 40], [18, 140, 50], [13, 100, 40], [9, 70, 30], [5, 42, 28], [2, 18, 26]].forEach(([w, y, h]) => g.fillRect(cx - w, y - h, w * 2, h));
+  g.fillRect(cx - 1, 0, 2, 18);
+  g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(cx - 24, 140, 6, 40); g.fillRect(cx - 18, 90, 5, 50);
+  g.fillStyle = '#E9C88E'; g.beginPath(); g.moveTo(0, 182); g.quadraticCurveTo(150, 172, 300, 184); g.lineTo(300, 200); g.lineTo(0, 200); g.fill();
+};
+TV[30] = (g, r) => { // 悉尼
+  skyFill(g, '#3E8ED8', '#CDE7F8');
+  water(g, 140, '#2E7EB8', '#14507E', .4);
+  g.fillStyle = '#E8DCC6'; g.fillRect(70, 132, 170, 12);
+  const shell = (x, w, h) => { g.fillStyle = '#FAFAF5'; g.beginPath(); g.moveTo(x - w * .4, 132); g.quadraticCurveTo(x - w * .4, 132 - h * .6, x + w * .5, 132 - h); g.quadraticCurveTo(x + w * .1, 132 - h * .5, x + w * .5, 132); g.fill(); g.strokeStyle = 'rgba(160,160,150,.6)'; g.lineWidth = .8; for (let k = 1; k < 4; k++){ g.beginPath(); g.moveTo(x - w * .4 + k * w * .2, 132); g.quadraticCurveTo(x - w * .2 + k * w * .1, 132 - h * .5, x + w * .5 - k * 2, 132 - h + k * 6); g.stroke(); } };
+  shell(110, 50, 56); shell(150, 56, 74); shell(196, 48, 60); shell(226, 30, 34);
+  g.strokeStyle = '#4E5E6A'; g.lineWidth = 4; g.beginPath(); g.arc(270, 170, 60, Math.PI * 1.05, Math.PI * 1.6); g.stroke();
+};
+TV[31] = (g, r) => { // 迪士尼乐园
+  skyFill(g, '#1A1E5A', '#5A3E9A', '#E88AB8');
+  for (let k = 0; k < 5; k++){ const x = 40 + k * 56, y = 30 + (k % 2) * 20, c = pick(['255,200,80','255,120,180','120,220,255','180,255,140']); for (let j = 0; j < 18; j++){ const a = j / 18 * 6.28; g.strokeStyle = `rgba(${c},.8)`; g.lineWidth = 1.4; g.beginPath(); g.moveTo(x + Math.cos(a) * 4, y + Math.sin(a) * 4); g.lineTo(x + Math.cos(a) * 20, y + Math.sin(a) * 20); g.stroke(); } }
+  const tower = (x, w, base, h, roof) => { g.fillStyle = '#F4EEF8'; g.fillRect(x - w, base - h, w * 2, h); g.fillStyle = roof; poly(g, [[x - w - 3, base - h], [x, base - h - w * 3.2], [x + w + 3, base - h]]); g.fill(); g.fillStyle = '#FFE08A'; g.fillRect(x - 2, base - h * .7, 4, 6); };
+  tower(100, 10, 170, 70, '#3E6EC8'); tower(200, 10, 170, 70, '#3E6EC8'); tower(130, 12, 160, 90, '#5A8AE8'); tower(170, 12, 160, 90, '#5A8AE8'); tower(150, 16, 150, 110, '#2E5AB8');
+  g.fillStyle = '#F4EEF8'; g.fillRect(90, 140, 120, 40); g.fillStyle = '#5A3E9A'; g.beginPath(); g.arc(150, 180, 12, Math.PI, 0); g.fill();
+  glowAt(g, 150, 120, 120, '255,200,240', .3);
+  g.fillStyle = '#2A1E4A'; g.fillRect(0, 180, 300, 20);
+};
+TV[32] = (g, r) => { // 环球邮轮
+  skyFill(g, '#4FA8E8', '#D6EEFA'); cloud(g, 40, 40, 1); cloud(g, 220, 30, .8);
+  water(g, 128, '#1F7EB8', '#0B3E6A', .4);
+  g.fillStyle = '#FFFFFF'; g.beginPath(); g.moveTo(40, 150); g.lineTo(270, 150); g.lineTo(250, 176); g.lineTo(60, 176); g.closePath(); g.fill();
+  g.fillStyle = '#1F3550'; g.fillRect(60, 166, 190, 6);
+  g.fillStyle = '#F4F6F8'; g.fillRect(70, 110, 170, 40); g.fillRect(90, 88, 130, 22); g.fillRect(120, 72, 70, 16);
+  g.fillStyle = '#2E4A6A'; for (let row = 0; row < 3; row++) for (let k = 0; k < 16; k++){ const x = 74 + k * 10, y = 116 + row * 10; if (row === 2 || x < 236) g.fillRect(x, y, 6, 4); }
+  for (let k = 0; k < 12; k++) g.fillRect(94 + k * 10, 94, 6, 4);
+  g.fillStyle = '#C8102E'; g.fillRect(170, 50, 18, 24); g.fillStyle = '#1A1A1A'; g.fillRect(170, 50, 18, 5);
+  g.fillStyle = 'rgba(255,255,255,.7)'; for (let k = 0; k < 6; k++) g.fillRect(250 + k * 8, 172 + k * 2, 14, 1.2);
+};
+
+/* ---------- 宠物：品种、照片、开销、生老病死、可以卖 ---------- */
+const PETS = [
+  {n:'中华田园犬', p:500, life:[12,16], cost:3000, joy:4, kind:'dog', art:{t:'dog', bg:'any', c:'#C8873E', c2:'#F2DDB8', ear:'up', curl:1}},
+  {n:'金毛', p:6000, life:[10,13], cost:8000, joy:5, kind:'dog', art:{t:'dog', bg:'any', c:'#D9A24E', c2:'#F2D49A', ear:'flop', fluffy:1}},
+  {n:'柯基', p:8000, life:[12,14], cost:6000, joy:5, kind:'dog', art:{t:'dog', bg:'any', c:'#D98A3C', c2:'#FFFFFF', ear:'up', short:1, hw:1.1}},
+  {n:'哈士奇', p:4000, life:[12,15], cost:7000, joy:4, kind:'dog', wreck:1, art:{t:'dog', bg:'any', c:'#FFFFFF', c2:'#FFFFFF', d:'#B9BEC6', mask:'#4A4E56', earC:'#4A4E56', ear:'up', eye:'#5AA9E6', legs:'#F4F4F4', tail:'#6A6E76'}},
+  {n:'柴犬', p:9000, life:[12,15], cost:6000, joy:4, kind:'dog', art:{t:'dog', bg:'any', c:'#D98A3C', c2:'#FFF4E2', ear:'up', curl:1}},
+  {n:'边境牧羊犬', p:7000, life:[12,15], cost:6000, joy:5, kind:'dog', art:{t:'dog', bg:'lawn', c:'#1E1E22', c2:'#FFFFFF', ear:'flop', earC:'#1E1E22', legs:'#FFFFFF', fluffy:1}},
+  {n:'泰迪', p:2500, life:[12,16], cost:5000, joy:4, kind:'dog', art:{t:'dog', bg:'room', c:'#9A5E36', c2:'#B8784A', ear:'flop', curly:1, s:.85}},
+  {n:'萨摩耶', p:8000, life:[12,14], cost:8000, joy:5, kind:'dog', art:{t:'dog', bg:'any', c:'#FBFBF8', c2:'#FFFFFF', d:'#DAD8D2', ear:'up', fluffy:1, curl:1, earIn:'#F2D0CC'}},
+  {n:'藏獒', p:150000, life:[10,14], cost:20000, joy:3, kind:'dog', bite:1, art:{t:'dog', bg:'lawn', c:'#2A1E18', c2:'#9A5E2E', ear:'flop', fluffy:1, s:1.12, hw:1.15, tongue:false}},
+  {n:'橘猫', p:300, life:[13,18], cost:3000, joy:4, kind:'cat', art:{t:'cat', bg:'room', c:'#E8963A', c2:'#FFF2DC', tabby:1, fat:1, eye:'#C9B23A'}},
+  {n:'英短蓝猫', p:4000, life:[13,17], cost:4000, joy:4, kind:'cat', art:{t:'cat', bg:'room', c:'#8C96A2', c2:'#A8B0BA', fat:1, hw:1.15, eye:'#E89A2A', muzzle:'#A0A8B2'}},
+  {n:'布偶猫', p:15000, life:[12,16], cost:6000, joy:5, kind:'cat', art:{t:'cat', bg:'room', c:'#F6F0E4', c2:'#FFFFFF', pt:'#8A6A52', fluffy:1, eye:'#4A8EE0', bell:1}},
+  {n:'暹罗猫', p:5000, life:[14,18], cost:4000, joy:4, kind:'cat', art:{t:'cat', bg:'room', c:'#EFE3CC', c2:'#F7EEDC', pt:'#3E2A20', eye:'#3A7BD5', bigEar:1}},
+  {n:'无毛猫', p:20000, life:[12,15], cost:6000, joy:3, kind:'cat', art:{t:'cat', bg:'room', c:'#E9B8A6', c2:'#F2C9B9', bigEar:1, wrinkle:1, eye:'#7AB648'}},
+  {n:'仓鼠', p:50, life:[2,3], cost:300, joy:2, kind:'small', art:{t:'hamster', bg:'cage', c:'#D9A050'}},
+  {n:'垂耳兔', p:300, life:[7,10], cost:1500, joy:3, kind:'small', art:{t:'rabbit', bg:'lawn', c:'#F4F0EA', c2:'#8C7A6A'}},
+  {n:'巴西龟', p:100, life:[25,40], cost:300, joy:1, kind:'small', art:{t:'turtle', bg:'tank'}},
+  {n:'非洲灰鹦鹉', p:30000, life:[40,60], cost:3000, joy:4, kind:'bird', talk:1, art:{t:'parrot', bg:'room'}},
+  {n:'一池锦鲤', p:80000, life:[25,45], cost:8000, joy:2, kind:'fish', keep:1.03, art:{t:'koi', bg:'none'}},
+  {n:'羊驼', p:60000, life:[15,20], cost:20000, joy:4, kind:'big', yard:1, art:{t:'alpaca', bg:'field'}},
+  {n:'球蟒', p:3000, life:[20,30], cost:1500, joy:1, kind:'small', art:{t:'snake', bg:'none'}},
+  {n:'纯血赛马', p:3000000, life:[22,28], cost:300000, joy:4, kind:'big', race:1, yard:1, art:{t:'horse', bg:'field'}},
+];
+const PET_NAMES = ['豆豆','旺财','来福','大黄','小白','球球','可乐','奶茶','布丁','年糕','团子','煤球','雪球','花卷','咪咪','小橘','元宝','皮蛋','土豆','馒头','七七','多多','毛毛','乐乐','饭团','芝麻','汤圆','黑豆','闪电','大福'];
+const PET_DEP = {dog:.85, cat:.86, small:.7, bird:.98, fish:1.03, big:.93};
+const pets = () => (S.pets = S.pets || []);
+const petWord = p => ({dog:'狗狗', cat:'猫咪', small:PETS[p.i].n, bird:'鹦鹉', fish:'锦鲤', big:PETS[p.i].n}[PETS[p.i].kind]);
+function petName(){ const used = pets().map(p => p.n); const free = PET_NAMES.filter(n => !used.includes(n)); return pick(free.length ? free : PET_NAMES); }
+const hasYard = () => S.assets.houses.some(h => houseIdx(h) >= 3) || S.flags.hermit;
+function getPet(i, how, name){
+  const P = PETS[i];
+  const p = {i, n:name || petName(), a:S.age, age:how === 'born' ? 0 : P.kind === 'fish' || P.kind === 'bird' ? R(1, 5) : how === 'adopt' ? R(1, 4) : R(0, 1), v:how === 'buy' ? P.p : Math.round(P.p * .2), s:R(1, 1e9), die:R(P.life[0], P.life[1]), with:0};
+  pets().push(p);
+  S.flags.pet = 1; S.flags.petsEver = (S.flags.petsEver || 0) + 1;
+  if (S.flags.petsEver >= 3) unlock('petlover');
+  cue('paws');
+  return p;
+}
+function petCard(p, big){ return photoCard('pet', p.i, p.s, p.n, `${PETS[p.i].n} · ${p.age} 岁${big ? '' : ` · 估值 ${fmt(p.v)}`}`, '', big); }
+function petPhoto(p, title, text){ modal(title, text, [{l:pick(['抱一抱','摸摸头','收好照片'])}], '宠物', petCard(p, true)); }
+function petShop(){
+  const minor = S.age < 18, cap = [300, 3000, 10000, 30000, 200000][tier()];
+  const cs = PETS.map((P, i) => {
+    const price = P.p;
+    const why = P.yard && !hasYard() ? ' · 要有带院子的房子' : '';
+    return {l:P.n, d:`${minor ? fmt(price) + ' · 家里出' : fmt(price)}${why}`, dis:() => S.ap <= 0 || pets().length >= 4 || (!minor && S.money < price) || (P.yard && !hasYard()) || (S.flags.blacklist && price >= 10000), f:() => {
+      spend();
+      if (minor){
+        if (!parentsAlive() && !S.flags.adopted){ L('没有大人替你做主，你只能隔着橱窗看了很久。', 'n', {happy:-2}); return; }
+        if (price > cap || (tier() <= 1 && chance(.4))){ L(pick([`你求爸妈买一只${P.n}，爸妈说太贵了，想都别想。`, `你在宠物店门口赖着不走，最后还是被拽回了家。`, '爸妈说：“你连自己都照顾不好，还想养宠物？”']), 'b', {happy:-4}); return; }
+        famPay(price);
+      }
+      const p = getPet(i, 'buy');
+      if (!minor){ S.money -= price; S.flags.spent = (S.flags.spent || 0) + price; }
+      L(`你把一只${P.n}带回了家，给它取名“${p.n}”。`, 'g', {happy:R(5, 9)});
+      petPhoto(p, '新成员', pick([`${p.n}到家的第一天，躲在沙发底下不肯出来。`, `${p.n}一进门就到处闻，好像在认它的新家。`, `你给${p.n}拍了一百张照片，发了一条朋友圈。`]));
+    }};
+  });
+  cs.unshift({l:'去救助站领养一只', d:'不花钱', dis:() => S.ap <= 0 || pets().length >= 4, f:() => {
+    spend();
+    if (S.age < 18 && tier() <= 1 && chance(.35)){ L('你抱回来一只流浪猫，爸妈让你从哪捡的放回哪去。', 'b', {happy:-4}); return; }
+    const i = pick([0, 0, 0, 9, 9, 6, 15]), p = getPet(i, 'adopt');
+    L(`你在流浪动物救助站领养了一只${PETS[i].n}，给它取名“${p.n}”。`, 'g', {happy:R(6, 10)});
+    petPhoto(p, '领养', pick([`它在笼子里看了你一眼，你就走不动道了。`, `工作人员说它被人丢过两次。你把它抱起来的时候，它一直在发抖。`]));
+  }});
+  cs.push({l:'算了', d:'不消耗行动', f:() => {}});
+  modal('养宠物', `${pets().length ? `你现在养着${pets().map(p => p.n).join('、')}。` : ''}养宠物每年都要花钱，生病了还得去看。最多同时养四只。`, cs, '宠物', `<div class="shelf">${PETS.map((P, i) => photoCard('pet', i, 31 + i, P.n, fmt(P.p))).join('')}</div>`, {wide:true});
+}
+function petGone(p, why, kind = 'b'){
+  const ps = pets(); if (!ps.includes(p)) return;
+  ps.splice(ps.indexOf(p), 1);
+  S.petMem = S.petMem || []; S.petMem.push({i:p.i, n:p.n, s:p.s, from:p.a, to:S.age, why});
+  if (!ps.length) S.flags.pet = 0;
+}
+function petDies(p, how){
+  const yrs = S.age - p.a;
+  petGone(p, '去世');
+  cue('rain');
+  L(`${how}陪了你 ${yrs} 年的${p.n}永远闭上了眼睛。你把它埋在了一棵树下。`, 'b', {happy:-R(6, 14), stress:R(2, 5)});
+  if (!S.flags.petLoss){ S.flags.petLoss = 1; node('别', `送走了${p.n}`, yrs >= 8 ? `${yrs} 年。它陪你走过的日子，比很多人都长。` : '它来过，你会一直记得。', true); }
+}
+function petTick(){
+  const ps = pets(); if (!ps.length) return;
+  let cost = 0, joy = 0;
+  for (const p of [...ps]){
+    const P = PETS[p.i];
+    p.age++; p.with = S.age - p.a;
+    p.v = Math.max(P.kind === 'fish' || P.kind === 'bird' ? 0 : 50, Math.round(p.v * (P.keep || PET_DEP[P.kind])));
+    if (S.jail){ if (chance(.4)){ petGone(p, '送人'); L(`你在里面的这些年，${p.n}被送给了别人。`, 'b', {happy:-6}); } continue; }
+    if (p.age >= p.die){ petDies(p, pick(['老得走不动路了，', '在一个安静的早上，', '最后一次蹭了蹭你的手，'])); continue; }
+    if (p.with === 10) unlock('oldfriend');
+    cost += Math.round(P.cost * (S.flags.homeless ? .2 : 1)); joy += P.joy;
+    const r = Math.random(), old = p.age >= p.die - 3;
+    if (r < (old ? .25 : .08)) petSick(p);
+    else if (r < .12 && ['dog','cat'].includes(P.kind) && !S.flags.homeless) petLost(p);
+    else if (r < .2 && P.wreck){ const c = R(2, 12) * 1000; L(pick([`${p.n}趁你不在家，把沙发拆成了一地棉花。`, `${p.n}咬烂了你新买的鞋，还对着你摇尾巴。`, `${p.n}把墙皮啃掉了一大块，房东找你赔钱。`]), 'n', {money:S.age >= 18 ? -c : 0, happy:1, stress:2}); }
+    else if (r < .24 && P.bite) mastiffBite(p);
+    else if (r < .3 && P.talk) parrotTalk(p);
+    else if (r < .33 && ['dog','cat'].includes(P.kind) && p.age >= 1 && p.age <= 8 && !p.fixed) petLitter(p);
+    else if (r < .4 && P.race) horseRace(p);
+    else if (r < .42 && P.kind === 'dog') L(pick([`有天夜里家里进了贼，${p.n}一阵狂叫，把小偷吓跑了。`, `你心情很差的那天，${p.n}一直把头靠在你膝盖上。`]), 'g', {happy:5});
+    else if (r < .45 && P.kind === 'cat') L(pick([`${p.n}半夜在你脸上踩来踩去，把你踩醒了。`, `${p.n}叼来一只死老鼠放在你枕头边，像是在报恩。`]), 'n', {happy:2});
+  }
+  if (!pets().length || S.jail) return;
+  const minor = S.age < 18;
+  if (minor) famPay(cost);
+  const names = pets().map(p => p.n).join('、');
+  L(`${names}又陪了你一年${cost ? `，吃喝看病花了 ${fmt(cost)}` : ''}。`, 'n', {money:minor || S.jail ? 0 : -cost, happy:Math.min(6, Math.ceil(joy / 2)), stress:-Math.min(6, Math.ceil(joy / 2))});
+}
+function petSick(p){
+  const P = PETS[p.i], k = P.kind === 'big' ? 10 : P.kind === 'small' ? .3 : 1;
+  const c1 = Math.round(R(3, 15) * 1000 * k), c2 = Math.round(R(4, 10) * 100 * k), minor = S.age < 18;
+  const pay = c => minor ? famPay(c) : -c;
+  modal(`${p.n}病了`, pick([`${p.n}这几天不吃不喝，趴在角落里一动不动。`, `${p.n}吐了好几次，走路都打晃。`, `你发现${p.n}身上长了一个肿块。`]), [
+    {l:'送去宠物医院', d:fmt(c1) + (minor ? ' · 家里出' : ''), f:() => { const m = pay(c1); if (chance(.72)) L(`你花了 ${fmt(c1)} 给${p.n}治病，它慢慢好了起来。`, 'g', {money:m, happy:4}); else { L(`你花了 ${fmt(c1)}，医生尽力了，${p.n}还是没能救回来。`, 'b', {money:m}); petDies(p, ''); } }},
+    {l:'去便宜的小诊所', d:fmt(c2) + (minor ? ' · 家里出' : ''), f:() => { const m = pay(c2); if (chance(.42)) L(`小诊所开了点药，${p.n}居然好了。`, 'g', {money:m, happy:3}); else { L(`小诊所的医生说不清是什么病，${p.n}没撑过那个星期。`, 'b', {money:m}); petDies(p, ''); } }},
+    {l:'不治了，看它自己', f:() => chance(.45) ? L(`过了半个月，${p.n}自己慢慢好了。`, 'g', {happy:3}) : (L('你一直不敢去看它。', 'b', {stress:4}), petDies(p, ''))},
+  ], '宠物', petCard(p, true), {need:() => pets().includes(p)});
+}
+function petLost(p){
+  modal(`${p.n}走丢了`, pick([`门没关好，${p.n}跑了出去，再也没回来。`, `你带${p.n}出门，一转身它就不见了。`]), [
+    {l:'贴寻宠启事，悬赏', d:S.age >= 18 ? '2 千' : '', f:() => { if (S.age >= 18) S.money -= 2000; if (chance(.6)) L(`三天后有人打电话说看到了${p.n}，你把它抱回家时它脏得像只泥猴。`, 'g', {happy:8}); else { petGone(p, '走丢'); L(`你找了整整一个月，${p.n}再也没回来。`, 'b', {happy:-12, stress:6}); } }},
+    {l:'自己大街小巷地找', f:() => { if (chance(.35)) L(`你在两条街外的垃圾桶边找到了${p.n}，它一看见你就扑了过来。`, 'g', {happy:8, health:-1}); else { petGone(p, '走丢'); L(`你喊哑了嗓子，${p.n}再也没回来。`, 'b', {happy:-12, stress:6}); } }},
+  ], '宠物', '', {need:() => pets().includes(p)});
+}
+function mastiffBite(p){
+  const c = R(5, 30) * 10000;
+  modal('咬人了', `${p.n}挣脱了绳子，把楼下的邻居咬伤了，缝了二十多针。`, [
+    {l:'赔钱私了', d:fmt(c), f:() => L(`你赔了 ${fmt(c)}，邻居才没有报警。`, 'b', {money:-c, stress:8})},
+    {l:'不认账，打官司', f:() => chance(.25) ? L('对方证据不足，官司你赢了，可整栋楼的人都不跟你说话了。', 'n', {happy:-5, stress:6}) : L(`法院判你全责，赔了 ${fmt(c * 2)}，还上了本地新闻。`, 'b', {money:-c * 2, happy:-8, stress:10})},
+    {l:'把它送走', f:() => { const got = Math.round(p.v * .5); petGone(p, '送走'); L(`你把${p.n}送去了郊外的养殖场，换回 ${fmt(got)}，又赔了邻居 ${fmt(c)}。`, 'b', {money:got - c, happy:-6}); }},
+  ], '宠物', '', {need:() => pets().includes(p)});
+}
+function parrotTalk(p){
+  if (S.affair && isMarried() && chance(.6)){ L(`${p.n}突然学着你的语气，冲着${S.partner.name}喊了一声：“${S.affair.n}，想你了！”`, 'b', {stress:10}); affairCaught(`鹦鹉${p.n}出卖了你`); return; }
+  L(pick([`${p.n}学会了背《静夜思》，来家里的客人都看呆了。`, `${p.n}学会了你骂人的话，家里来客人的时候它喊了出来。`, `${p.n}学会了模仿手机铃声，你一天接了八次空电话。`]), 'g', {happy:4});
+}
+function petLitter(p){
+  const P = PETS[p.i], n = R(3, 6), each = Math.max(100, Math.round(P.p * R(3, 7) / 10));
+  modal('生了一窝', `${p.n}生了 ${n} 只小${P.kind === 'dog' ? '狗' : '猫'}，挤在纸箱里哼哼唧唧。`, [
+    {l:'全卖了', d:`每只约 ${fmt(each)}`, f:() => { p.fixed = 1; L(`小家伙们被一个个抱走，你卖了 ${fmt(each * n)}。${p.n}找了它们好几天。`, 'n', {money:S.age >= 18 ? each * n : 0, happy:-2}); }},
+    {l:'送给邻居和朋友', f:() => { p.fixed = 1; L('你把小家伙们送给了靠谱的人家，大家时不时发来照片。', 'g', {happy:4}); }},
+    {l:'留下一只', dis:() => pets().length >= 4, f:() => { p.fixed = 1; const k = getPet(p.i, 'born'); L(`你留下了最小的那只，取名“${k.n}”，其余的送了人。`, 'g', {happy:6}); petPhoto(k, '家里又多了一个', `${k.n}的眼睛还没完全睁开。`); }},
+  ], '宠物', '', {need:() => pets().includes(p)});
+}
+function horseRace(p){
+  if (chance(.3)){ const w = R(50, 300) * 10000; p.v = Math.round(p.v * 1.3); L(`${p.n}在赛马会上拿了冠军，奖金 ${fmt(w)}！`, 'e', {money:w, happy:10}); }
+  else L(pick([`${p.n}在比赛里跑了第五名，报名费白交了。`, `${p.n}在赛前拉伤了腿，只能休养一年。`]), 'n', {money:-R(5, 20) * 10000, happy:-2});
+}
+const PET_PLAY = {
+  dog:[n => `你每天早晚带${n}出去遛弯。`, n => `你带${n}去公园，它追了一下午的飞盘。`, n => `${n}一听到你的脚步声就在门口转圈。`, n => `你给${n}洗了个澡，它甩了你一身水。`],
+  cat:[n => `${n}趴在你腿上打呼噜，你一动都不敢动。`, n => `你拿逗猫棒陪${n}玩了一晚上。`, n => `${n}把你桌上的东西一样一样推到了地上。`, n => `你给${n}买了个纸箱，它比玩具还喜欢。`],
+  small:[n => `你给${n}换了新的垫料，它钻进去就不出来了。`, n => `你看着${n}吃东西，看了好久。`],
+  bird:[n => `你教${n}吹口哨，它学得比你还像。`, n => `${n}站在你肩膀上，跟着你在屋里转。`],
+  fish:[() => '你坐在池边喂锦鲤，一池子的鱼都游了过来。', () => '你蹲在池边看鱼，看了一下午，心里静了下来。'],
+  big:[n => `你给${n}梳了一下午的毛。`, n => `你牵着${n}在草场上走了一圈。`],
+};
+function playPet(){
+  const p = pick(pets()), P = PETS[p.i];
+  if (chance(.1) && ['dog','cat'].includes(P.kind)){ L(pick([`${p.n}玩疯了，在你手上抓了一道血口子，你去打了狂犬疫苗。`, `你遛${p.n}的时候它突然冲出去，把你拽倒在地上。`]), 'b', {health:-2, money:S.age >= 18 ? -R(3, 15) * 100 : 0}); return; }
+  L(pick(PET_PLAY[P.kind])(p.n), 'g', {happy:R(2, 5), stress:-R(2, 5), health:P.kind === 'dog' ? R(0, 2) : 0});
+  cue('paws');
+}
+
+/* ---------- 变卖：房子、车、东西、宠物都能卖；急用钱可以去当铺 ---------- */
+const PORTABLE = ['bag','watch','jewel','tech','wear','goldbar','liquor','vase','painting'];
+function sellables(){
+  const xs = [];
+  S.assets.houses.forEach(h => xs.push({t:'house', ref:h, n:h.n, v:h.v, debt:Math.max(0, h.debt), ph:['house', houseIdx(h), h.s || 3]}));
+  S.assets.cars.forEach(c => xs.push({t:'car', ref:c, n:c.n, v:c.v, ph:['car', carIdx(c), c.s || 5]}));
+  (S.items || []).filter(x => !x.got).forEach(x => xs.push({t:'item', ref:x, n:x.n, v:x.v, fake:x.fake, ph:[x.k, x.i, x.s]}));
+  pets().forEach(p => xs.push({t:'pet', ref:p, n:p.n, v:p.v, ph:['pet', p.i, p.s]}));
+  return xs;
+}
+function dropAsset(x){
+  const arr = x.t === 'house' ? S.assets.houses : x.t === 'car' ? S.assets.cars : x.t === 'item' ? S.items : null;
+  if (arr){ const k = arr.indexOf(x.ref); if (k >= 0) arr.splice(k, 1); }
+  if (x.t === 'pet') petGone(x.ref, '卖掉');
+}
+function sellOne(x, how){
+  dropAsset(x);
+  let got;
+  if (how === 'pawn') got = Math.round(x.v * (x.fake ? .2 : .4 + Math.random() * .15));
+  else if (how === 'auction') got = Math.round(x.v * (.55 + Math.random() * .15)) - (x.debt || 0);
+  else if (x.t === 'house') got = Math.round(x.v * (.92 + Math.random() * .12)) - x.debt;
+  else if (x.t === 'car') got = Math.round(x.v * (.8 + Math.random() * .15));
+  else if (x.t === 'pet') got = Math.round(x.v * (.5 + Math.random() * .4));
+  else got = Math.round(x.v * (x.fake ? .5 : .75 + Math.random() * .2));
+  return got;
+}
+function sellLine(x, got){
+  if (x.t === 'pet') return got < 300 ? `你把${x.n}送给了别人。它被抱走的时候，一直回头看你。` : `你把${x.n}卖了 ${fmt(got)}。它被带走的时候，一直回头看你。`;
+  if (x.t === 'house') return `你卖掉了${x.n}，${x.debt ? '还完剩下的房贷，' : ''}到手 ${fmt(got)}。`;
+  if (x.t === 'car') return `你把${x.n}卖给了二手车商，到手 ${fmt(got)}。`;
+  return x.fake ? `你想把${x.n}卖掉，收货的人一眼就看出是假的，只给了 ${fmt(got)}。` : `你把${x.n}卖给了二手店，到手 ${fmt(got)}。`;
+}
+function payDown(){
+  // 手里有钱时，先还利息最高的债
+  const ds = (S.debts || []).slice().sort((a, b) => b.rate - a.rate);
+  let paid = 0;
+  for (const d of ds){ if (S.money <= 0) break; const k = Math.min(d.amt, S.money); d.amt -= k; S.money -= k; paid += k; }
+  S.debts = (S.debts || []).filter(d => d.amt > 0);
+  return paid;
+}
+function sellMenu(forced){
+  const xs = sellables();
+  const cs = xs.map(x => ({l:x.t === 'pet' && x.v < 300 ? `把${x.n}送人` : `卖掉${x.n}`, d:`估值 ${fmt(x.v)}${x.debt ? ` · 还欠 ${fmt(x.debt)}` : ''}${forced ? '' : ''}`, dis:() => !forced && S.ap <= 0, f:() => {
+    if (!forced) spend();
+    const got = sellOne(x, 'shop');
+    L(sellLine(x, got), 'n', {money:got, happy:x.t === 'pet' ? -R(8, 16) : x.t === 'house' ? -3 : -1});
+    if (forced){ const paid = payDown(); if (paid) L(`卖来的钱立刻拿去还了债，还掉 ${fmt(paid)}。`, 'n'); afterRepay(); if (S.money < 0 && sellables().length) sellMenu(true); }
+  }}));
+  if (xs.some(x => x.t === 'item' || x.t === 'car')) cs.unshift({l:'把值钱的全拿去当铺', d:'不消耗行动 · 只给四五成', f:() => {
+    const ys = xs.filter(x => x.t === 'item' || x.t === 'car');
+    let sum = 0; ys.forEach(x => { sum += sellOne(x, 'pawn'); });
+    unlock('pawn');
+    L(`你把${ys.map(x => x.n).slice(0, 4).join('、')}${ys.length > 4 ? '等东西' : ''}都送进了当铺，当了 ${fmt(sum)}。柜台后面的人头都没抬。`, 'b', {money:sum, happy:-6, stress:-3});
+    if (forced){ const paid = payDown(); if (paid) L(`当来的钱立刻拿去还了债，还掉 ${fmt(paid)}。`, 'n'); afterRepay(); }
+  }});
+  cs.push({l:forced ? '什么都不卖' : '算了', d:'不消耗行动', f:() => {}});
+  const shelf = xs.slice(0, 12).map(x => photoCard(x.ph[0], x.ph[1], x.ph[2], x.n, `估值 ${fmt(x.v)}`)).join('');
+  modal(forced ? '变卖家当还债' : '变卖家当', xs.length ? `二手的东西总要打折；当铺最快，但给得最少。${debtTotal() ? `你还欠着 ${fmt(debtTotal())}。` : ''}` : '你已经没有什么能卖的了。', cs, '变现', shelf ? `<div class="shelf">${shelf}</div>` : '', {wide:true});
+}
+function repayMenu(){
+  const ds = S.debts || [];
+  const cs = [];
+  ds.forEach(d => {
+    cs.push({l:`还清${d.n}`, d:fmt(d.amt), dis:() => S.money < d.amt, f:() => { S.money -= d.amt; L(`你一次还清了${d.n} ${fmt(d.amt)}。`, 'g', {happy:5, stress:-6}); d.amt = 0; S.debts = S.debts.filter(x => x.amt > 0); afterRepay(); }});
+    cs.push({l:`先还${d.n}一半`, d:fmt(Math.round(d.amt / 2)), dis:() => S.money < d.amt / 2, f:() => { const k = Math.round(d.amt / 2); S.money -= k; d.amt -= k; L(`你先还了${d.n} ${fmt(k)}。`, 'n', {stress:-3}); }});
+  });
+  cs.push({l:'能还多少还多少', d:'先还利息高的', dis:() => S.money <= 0, f:() => { const k = payDown(); L(`你把手里的 ${fmt(k)} 都拿去还了债。`, 'n', {stress:-4}); afterRepay(); }});
+  cs.push({l:'算了', d:'不消耗行动', f:() => {}});
+  modal('还债', `你手里有 ${fmt(S.money)}，一共欠着 ${fmt(debtTotal())}。还债不占行动次数。`, cs, '借贷');
+}
+function afterRepay(){
+  if (debtTotal() > 0) return;
+  S.flags.overdue = 0;
+  if (S.flags.blacklist){ S.flags.blacklist = 0; L('你还清了所有欠款，法院把你从失信名单上移了出去。', 'g', {happy:6, stress:-6}); }
+}
+
+/* ---------- 欠钱不还：催收、上门、法院、失信名单、强制执行、拘留和坐牢 ---------- */
+function beaten(lvl, d){
+  unlock('beaten');
+  const h = R(8, 16) * Math.min(3, lvl);
+  L(pick(S.flags.homeless ? ['他们在桥洞下找到了你，把你打了一顿。', '他们把你拖上面包车，打了一顿扔在了郊外。', '你被按在地上拳打脚踢，肋骨断了两根。'] : ['几个人把你堵在楼道里打了一顿，你鼻青脸肿地爬回了家。', '他们把你拖上面包车，打了一顿扔在了郊外。', '你被按在地上拳打脚踢，肋骨断了两根。']), 'b', {health:-h, happy:-10, stress:12});
+  if (chance(.3)) addIll('fracture');
+  if (lvl >= 3 && chance(.12)) addIll('leg');
+  const port = (S.items || []).filter(x => !x.got && PORTABLE.includes(x.k)).sort((a, b) => b.v - a.v)[0];
+  if (port && d && chance(.5)){ S.items.splice(S.items.indexOf(port), 1); const off = Math.round(port.v * .4); d.amt = Math.max(0, d.amt - off); L(`临走前，他们把你的${port.n}拿走了，说抵 ${fmt(off)} 的债。`, 'b', {happy:-4}); }
+  if (S.alive && lvl >= 3 && chance(.04 * lvl)) die('被讨债的人打成重伤，抢救无效', 'beaten');
+}
+function sharkVisit(d, lvl){
+  if (S.flags.fled && S.age - S.flags.fled <= 2 && chance(.7)) return;
+  const hl = S.flags.homeless;
+  if (hl && chance(.6)) return;
+  cue('paint');
+  if (lvl === 1){
+    L(pick(hl ? ['催收的人把你的照片P成遗照，发给了你通讯录里的每一个人。', '你听说有人拿着你的照片在附近打听你的下落。'] : [`你家门上被泼了红油漆，写着“欠债还钱”。`, '催收的人把你的照片P成遗照，发给了你通讯录里的每一个人。', '半夜有人砸你家的门，邻居报了警。']), 'b', {happy:-8, stress:12});
+    return;
+  }
+  const has = sellables().length;
+  modal('讨债的上门了', hl ? `几个纹着身的男人找到了你睡觉的地方：“${d.n}连本带利 ${fmt(d.amt)}，躲到哪儿都没用。”` : `几个纹着身的男人堵在你家门口：“${d.n}连本带利 ${fmt(d.amt)}，今天必须给个说法。”`, [
+    {l:'把家里值钱的卖了还钱', dis:() => !has, f:() => sellMenu(true)},
+    {l:'求他们再宽限一阵', f:() => { if (chance(.45)){ d.amt = Math.round(d.amt * 1.25); L('领头的抽了根烟：“最后一次。”利息又往上翻了一截。', 'b', {stress:8}); } else beaten(lvl, d); }},
+    {l:'报警', f:() => { if (chance(.5)){ d.amt = Math.round(d.amt * .45); d.rate = .06; L('警方打掉了这个放贷团伙。法院认定超出法定利率的部分无效，你只需要还本金。', 'g', {stress:-10, happy:6}); } else { L(S.flags.homeless ? '警察来做了个笔录就走了。第二天晚上，他们又找上了你。' : '警察来做了个笔录就走了。第二天晚上，你家的窗户被砸了。', 'b', {stress:12}); beaten(lvl, d); } }},
+    {l:'连夜跑路', f:() => { if (chance(.6)){ S.flags.fled = S.age; if (S.job){ S.job = null; } L('你连夜收拾了一个包，坐上了去外地的大巴。工作没了，家也回不去了。', 'b', {happy:-12, stress:6}); } else { L('你在车站被他们堵住了。', 'b'); beaten(lvl + 1, d); } }},
+    {l:'硬扛着不给', f:() => beaten(lvl, d)},
+  ], '催债', '', {need:() => (S.debts || []).includes(d)});
+}
+function courtCase(d, lvl){
+  const f = S.flags, who = d ? d.n.replace(/的钱$/, '') : '债主', owe = d ? d.amt : -S.money;
+  if (lvl === 1){
+    L(pick([`${who}的催收电话一天打几十个，连你单位都知道了。`, `你的征信上多了一条逾期记录，${who}说再不还就起诉。`]), 'b', {happy:-5, stress:8});
+    return;
+  }
+  if (lvl === 2 || !f.blacklist){
+    f.blacklist = 1; unlock('blacklist');
+    modal('法院传票', `${who}把你告上了法院，判决你限期还清 ${fmt(owe)}。你被列入了失信被执行人名单：不能坐飞机高铁，不能买奢侈品，孩子也上不了私立学校。`, [
+      {l:'把东西卖了还钱', dis:() => !sellables().length, f:() => sellMenu(true)},
+      {l:'申请和解，分期还', f:() => { if (d && chance(.6)){ d.rate = .04; f.overdue = 0; L('法院主持调解，对方同意你分五年慢慢还。', 'n', {stress:-4}); } else L('对方不同意分期，说要么还钱，要么强制执行。', 'b', {stress:6}); }},
+      {l:'不理它', f:() => { f.ignored = 1; L('你把传票塞进了抽屉。', 'n', {stress:4}); }},
+    ], '法院', '', {need:() => S.money < 0});
+    cue('seal');
+    return;
+  }
+  // 强制执行：先拍卖值钱的东西，再拍卖车和房
+  const xs = sellables().filter(x => x.t !== 'pet').sort((a, b) => (a.t === 'house') - (b.t === 'house') || b.v - a.v);
+  let need = owe, sum = 0; const taken = [];
+  for (const x of xs){ if (need <= 0) break; const got = Math.max(0, sellOne(x, 'auction')); sum += got; need -= got; taken.push(x.n); }
+  if (taken.length){
+    unlock('seized'); cue('seal');
+    L(`法院强制执行：你的${taken.slice(0, 4).join('、')}${taken.length > 4 ? '等' : ''}被查封拍卖，一共抵了 ${fmt(sum)}。`, 'b', {money:sum, happy:-12, stress:10});
+    payDown();
+    if (taken.length === 1 && xs.length === 1) node('封', '家产被查封', '法院的人在门上贴封条的时候，邻居们都在看。', true);
+    return;
+  }
+  if (lvl >= 4 && f.ignored && chance(.35)){ goJail(R(1, 3), '你名下没有可执行的财产，又一直拒不履行判决。法院以拒不执行判决、裁定罪判了你的刑。'); return; }
+  L(pick(['法院找上门，你被司法拘留了十五天。', '你名下什么都没有，法院把你的银行卡全部冻结了。']), 'b', {happy:-8, stress:10});
+}
+function kinVisit(d, lvl){
+  if (lvl === 1){ L(pick(['借你钱的亲戚开始在家族群里阴阳怪气。', '过年回家，借你钱的亲戚当着全家的面问你什么时候还。']), 'b', {happy:-5, stress:5}); return; }
+  modal('亲戚上门要钱', `借你钱的亲戚坐在你家沙发上不走：“${fmt(d.amt)}，我也是等着用的。”`, [
+    {l:'卖点东西先还上', dis:() => !sellables().length, f:() => sellMenu(true)},
+    {l:'赔笑脸，求再宽限', f:() => chance(.5) ? L('亲戚叹了口气走了，从此过年再也不来你家。', 'b', {happy:-5}) : L('亲戚当场翻脸，说你是白眼狼。家里人都站在亲戚那边。', 'b', {happy:-10, stress:8})},
+    {l:'躲着不见', f:() => { if (chance(.4)){ d.rate = .06; L('亲戚把你告上了法院。一家人从此成了仇人。', 'b', {happy:-10, stress:8}); } else L('你把亲戚的电话拉黑了。', 'n', {happy:-4}); }},
+  ], '催债', '', {need:() => (S.debts || []).includes(d)});
+}
+function debtPressure(){
+  const f = S.flags;
+  if (S.age < 18 || S.jail) return;
+  const ds = S.debts || [];
+  if (S.money >= 0){ f.overdue = 0; return; }
+  if (!ds.length && S.money > -30000){ f.overdue = 0; return; }
+  f.overdue = (f.overdue || 0) + 1;
+  const lvl = f.overdue;
+  const shark = ds.find(d => d.rate >= .3), legal = ds.filter(d => d.rate > 0 && d.rate < .3).sort((a, b) => b.amt - a.amt)[0], kin = ds.find(d => d.rate === 0);
+  if (shark) sharkVisit(shark, lvl);
+  else if (legal || S.money < -30000) courtCase(legal, lvl);
+  else if (kin) kinVisit(kin, lvl);
+}
+
+/* ---------- 婚外情：快乐，也有压力，迟早会露馅 ---------- */
+const CAUGHT_HOW = ['你的手机忘了锁屏', '信用卡账单上多了一笔酒店的消费', '对方在你车里发现了一支不是自己的口红', '朋友在商场撞见了你们，转头就告诉了你家里', '对方请了私家侦探，拍到了你们的照片', '情人直接找上了门'];
+function affairCaught(how){
+  if (!S.affair || !isMarried()) return;
+  const A = S.affair, P = S.partner;
+  S.flags.caught = 1; unlock('caught');
+  cue('flash');
+  node('裂', '东窗事发', `${how || pick(CAUGHT_HOW)}。${P.name}拿着证据，一句话也没说。`, true);
+  modal('东窗事发', `${P.name}发现了你和${A.n}的事。`, [
+    {l:'跪下求原谅', f:() => chance(S.kids.some(k => !k.dead) ? .4 : .28) ? (S.affair = null, S.flags.secretKid = 0, L('对方哭了一整夜，最后给了你一次机会。可你们之间，再也回不到从前了。', 'b', {happy:-10, stress:10})) : divorce('对方没有原谅你。你们离婚了，财产分走了一大半。', .6)},
+    {l:'发誓和情人一刀两断', f:() => { if (chance(.4)){ S.affair = null; L(`你当着${P.name}的面删掉了${A.n}的所有联系方式。日子还在过，只是家里安静了很多。`, 'b', {happy:-8, stress:8}); } else divorce(`${P.name}说：“这种话，你上次也说过。”你们离婚了。`, .55); }},
+    {l:'干脆离婚，和情人在一起', f:() => { const n = A.n; divorce(`你和${P.name}离婚了。`, .5); setPartner(n); L(`你和${n}光明正大地在一起了。`, 'n', {happy:5}); }},
+    {l:'净身出户', f:() => divorce('你签了离婚协议，净身出户。', 1)},
+  ], '感情', '', {need:() => !!S.affair && isMarried()});
+}
+function affairTick(){
+  const A = S.affair;
+  if (!A) return;
+  if (!isMarried()) return;
+  A.yrs = (A.yrs || 0) + 1;
+  L(pick([`和${A.n}在一起的时候，你觉得自己又年轻了一回。`, '偷偷摸摸的日子又刺激又累人，你每天都要删聊天记录。', '你开始编越来越多的谎：加班、出差、应酬。', `你手机从不离身，${S.partner.name}多看一眼你都心惊肉跳。`]), 'n', {happy:R(4, 9) + (A.kept ? 3 : 0), stress:R(6, 12) + (A.kept ? 3 : 0)});
+  if (S.flags.secretKid){ L('你偷偷给外面的孩子打了一年的生活费。', 'n', {money:-100000, stress:6}); }
+  const p = .16 + A.yrs * .07 + (A.kept ? .08 : 0) + (S.flags.secretKid ? .12 : 0) + (A.gifts || 0) * .03;
+  if (chance(p)) affairCaught(pick(CAUGHT_HOW));
+}
+function giftMenu(){
+  const A = S.affair;
+  const give = (n, c, h, t) => () => { spend(); A.gifts = (A.gifts || 0) + 1; S.flags.spent = (S.flags.spent || 0) + c; L(t, 'n', {money:-c, happy:h, stress:3}); cue('bags'); if (chance(.12)) affairCaught(`${S.partner.name}在你的手机里看到了一笔 ${fmt(c)} 的${n}付款记录`); };
+  modal('给情人花钱', `${A.n}最近总说别人的${pick(['男朋友','女朋友','对象'])}多大方。`, [
+    {l:'买个名牌包', d:'3 万', dis:() => S.money < 30000 || S.ap <= 0, f:give('名牌包', 30000, R(3, 6), `你给${A.n}买了个名牌包，TA抱着你亲了一口。`)},
+    {l:'买条金项链', d:'2 万', dis:() => S.money < 20000 || S.ap <= 0, f:give('金项链', 20000, R(2, 5), `你给${A.n}买了一条金项链。`)},
+    {l:'带TA去海岛玩一趟', d:'5 万', dis:() => S.money < 50000 || S.ap <= 0 || S.flags.blacklist, f:give('机票酒店', 50000, R(5, 9), `你骗家里说出差，带${A.n}去了海岛。`)},
+    {l:'给TA租套房子', d:'每年 20 万', dis:() => S.money < 200000 || S.ap <= 0 || A.kept, f:() => { give('房租', 50000, R(4, 7), `你给${A.n}租了一套公寓，每个月打钱。`)(); A.kept = 1; }},
+    {l:'给TA买辆车', d:'30 万', dis:() => S.money < 300000 || S.ap <= 0, f:give('购车', 300000, R(5, 9), `你给${A.n}买了一辆车，车钥匙上系着蝴蝶结。`)},
+    {l:'算了', d:'不消耗行动', f:() => {}},
+  ], '感情');
+}
+
+/* ---------- 新的买东西：数码、服饰、收藏、豪车、吃喝玩乐 ---------- */
+GOODS.tech = {n:'数码产品', list:[{n:'PS5 游戏机', p:4000, i:3, r:.6}, {n:'大疆无人机', p:8000, i:2, r:.6}, {n:'最新款 iPhone', p:9999, i:0, r:.55}, {n:'MacBook Pro', p:18000, i:1, r:.65}]};
+GOODS.wear = {n:'服饰', list:[{n:'限量版 AJ 球鞋', p:3000, i:0, r:.95}, {n:'加拿大鹅羽绒服', p:9000, i:1, r:.5}, {n:'Gucci 定制西装', p:40000, i:2, r:.4}]};
+GOODS.collect.list.push(
+  {n:'飞天茅台一箱', p:20000, k:'liquor', i:0, r:1.06, fakeP:.2},
+  {n:'一公斤金条', p:600000, k:'goldbar', i:0, r:1.02},
+  {n:'齐白石虾图', p:3000000, k:'painting', i:0, r:1.04, fakeP:.4},
+  {n:'湾流私人飞机', p:300000000, k:'jet', i:0, r:.9},
+);
+GOODS.collect.list.sort((a, b) => a.p - b.p);
+GOODS.car.list.push({n:'特斯拉 Model 3', p:250000, i:1}, {n:'奔驰 S 级', p:1300000, i:2}, {n:'法拉利 SF90', p:5000000, i:3, fast:1}, {n:'劳斯莱斯库里南', p:7000000, i:2});
+GOODS.car.list.sort((a, b) => a.p - b.p);
+function luxMenu(){
+  modal('奢侈品', `你现在有 ${fmt(S.money)}。`, [
+    {l:'包包', f:() => goodsMenu('bag')}, {l:'手表', f:() => goodsMenu('watch')}, {l:'珠宝', f:() => goodsMenu('jewel')}, {l:'服饰鞋子', f:() => goodsMenu('wear')},
+    {l:'算了', d:'不消耗行动', f:() => {}},
+  ], '消费');
+}
+function funMenu(){
+  const g = S.gender === 'm' ? '大哥' : '大姐';
+  const treat = (c, list, h, extra) => () => { spend(); S.flags.spent = (S.flags.spent || 0) + c; const [hh] = joy(c); const fx = {money:-c, happy:hh < 0 ? hh : h, ...(extra || {})}; L(pick(list), hh < 0 ? 'b' : 'g', fx); };
+  modal('吃喝玩乐', `你现在有 ${fmt(S.money)}。`, [
+    {l:'米其林三星大餐', d:'8 千', dis:() => S.money < 8000 || S.ap <= 0, f:() => chance(.2) ? (spend(), L('一盘菜只有一口，吃完回家你又煮了碗面。', 'n', {money:-8000, happy:1})) : treat(8000, ['你吃了一顿人均八千的法餐，服务员讲解每道菜讲了十分钟。', '你第一次吃到了真正的黑松露，觉得也就那样。', '主厨亲自出来跟你合了影。'], R(2, 5))()},
+    {l:'看演唱会 VIP 座', d:'5 千', dis:() => S.money < 5000 || S.ap <= 0, f:() => chance(.15) ? (spend(), scam(5000), L('你在门口被告知，黄牛卖给你的票是假的。', 'b', {money:-5000, happy:-6})) : treat(5000, ['你在第一排喊哑了嗓子，偶像朝你挥了挥手。', '全场大合唱的时候，你哭了。'], R(4, 8))()},
+    {l:'高端 SPA 按摩', d:'3 千', dis:() => S.money < 3000 || S.ap <= 0, f:() => chance(.12) ? (spend(), L('按摩师手太重，你的腰疼了一个星期。', 'b', {money:-3000, health:-2})) : treat(3000, ['你在按摩床上睡着了，醒来浑身轻松。', '精油的味道很好闻，你一个月来第一次放松下来。'], 2, {stress:-R(5, 10)})()},
+    {l:'请私人健身教练', d:'一年 3 万', dis:() => S.money < 30000 || S.ap <= 0, f:() => chance(.25) ? (spend(), L('教练每节课都在推销蛋白粉，你练了两个月就不去了。', 'n', {money:-30000})) : treat(30000, ['教练带你练了一整年，你的腹肌若隐若现。', '你第一次跑完了五公里，教练给你鼓了掌。'], 2, {health:R(3, 7), looks:R(0, 2)})()},
+    {l:'双十一清空购物车', d:'2 万', dis:() => S.money < 20000 || S.ap <= 0, f:() => { cue('bags'); treat(20000, ['快递堆满了半个客厅，你拆了一整天。', '你凌晨守着零点付款，第二天发现一半东西用不上。', '买的时候很快乐，收到还款提醒的时候不太快乐。'], R(1, 4))(); }},
+    {l:'请朋友吃喝玩乐', d:'5 万', dis:() => S.money < 50000 || S.ap <= 0, f:treat(50000, [`你包下了整个KTV，朋友们都叫你“${g}”。`, '你请大家去吃了顿人均两千的日料。', '饭局散了，你才发现有一半的人你根本不认识。'], R(2, 5))},
+    {l:'打赏主播', d:'10 万', dis:() => S.money < 100000 || S.ap <= 0, f:treat(100000, [`你一晚上刷了十万的礼物，主播喊你“榜一${g}”。`, '你刷了一晚上礼物，第二天主播就不认识你了。', '你打赏完，主播私信你借钱。'], R(1, 4))},
+    {l:'整容', d:'15 万', dis:() => S.money < 150000 || S.ap <= 0, f:() => { spend(); unlock('plastic'); S.flags.spent = (S.flags.spent || 0) + 150000; const r = Math.random();
+      if (r < .7) L(pick(['手术很成功，镜子里的人你都快认不出了。','恢复了三个月，你终于敢出门了，回头率高了不少。']), 'g', {money:-150000, looks:R(5, 13), happy:5});
+      else if (r < .92) L('整得有点假，朋友们看你的眼神怪怪的。', 'b', {money:-150000, looks:-R(2, 6), happy:-6});
+      else { L('手术出了事故，你的脸毁了。', 'b', {money:-150000, looks:-R(15, 30), happy:-20, health:-8}); node('毁', '整容失败', '你很久都不敢照镜子。', true); } }},
+    {l:'给爸妈买金镯子', d:'3 万', dis:() => S.money < 30000 || !parentsAlive() || S.ap <= 0, f:() => { spend(); L('你给爸妈买了金镯子，妈妈戴着去菜市场转了好几圈。', 'g', {money:-30000, happy:6}); }},
+    {l:'给爸妈买房', d:'100 万', dis:() => S.money < 1e6 || !parentsAlive() || S.ap <= 0, f:() => { spend(); L('你在城里给爸妈买了一套房，妈妈摸着墙哭了。', 'e', {money:-1e6, happy:12}); node('孝', '给爸妈买了房', '小时候答应过他们的。'); }},
+    {l:'算了', d:'不消耗行动', f:() => {}},
+  ], '消费');
+}
+function shopMenu(){
+  const bl = S.flags.blacklist;
+  modal('花钱', `你现在有 ${fmt(S.money)}，名下 ${S.assets.houses.length} 套房、${S.assets.cars.length} 辆车、${(S.items || []).filter(x => !x.got).length} 件值钱的东西、${pets().length} 只宠物。${bl ? '你上了失信被执行人名单，买房买车和奢侈品都被限制了。' : ''}`, [
+    {l:'买房', dis:() => bl, f:houseMenu}, {l:'买车', dis:() => bl, f:() => goodsMenu('car')},
+    {l:'奢侈品', dis:() => bl, f:luxMenu}, {l:'数码产品', f:() => goodsMenu('tech')},
+    {l:'收藏投资', dis:() => bl, f:() => goodsMenu('collect')}, {l:'养宠物', dis:() => pets().length >= 4, f:petShop},
+    {l:'吃喝玩乐', f:funMenu},
+    {l:'算了', d:'不消耗行动', f:() => {}},
+  ], '消费');
+}
+function goodsHTML(){
+  const cards = [];
+  S.assets.houses.forEach(h => cards.push(photoCard('house', houseIdx(h), h.s || 3, h.n, `${h.a != null ? h.a + '岁买入 · ' : ''}现值 ${fmt(h.v)}${h.debt > 0 ? ' · 房贷中' : ''}`)));
+  S.assets.cars.forEach(c => cards.push(photoCard('car', carIdx(c), c.s || 5, c.n, `${c.a != null ? c.a + '岁买入 · ' : ''}现值 ${fmt(c.v)}`)));
+  pets().forEach(p => cards.push(photoCard('pet', p.i, p.s, p.n, `${PETS[p.i].n} · ${S.age - p.a} 年了 · 估值 ${fmt(p.v)}`)));
+  (S.items || []).filter(x => !x.got).forEach(x => cards.push(photoCard(x.k, x.i, x.s, x.n, `${x.a}岁入手 · 现值 ${fmt(x.v)}`)));
+  (S.items || []).filter(x => x.got).forEach(x => cards.push(photoCard(x.k, x.i, x.s, x.n, `${x.a}岁获得`, x.n)));
+  (S.petMem || []).forEach(m => cards.push(photoCard('pet', m.i, m.s, m.n, `${m.from}—${m.to}岁陪着你 · ${m.why === '去世' ? '已离世' : m.why === '走丢' ? '走丢了' : '已' + m.why}`).replace('<img ', '<img style="filter:grayscale(1)" ')));
+  return cards.length ? `<div class="goods">${cards.join('')}</div>` : '';
+}
+function assetValue(){ return S.assets.houses.reduce((s, h) => s + h.v - Math.max(0, h.debt), 0) + S.assets.cars.reduce((s, c) => s + c.v, 0) + (S.items || []).reduce((s, x) => s + (x.v || 0), 0) + (S.pets || []).reduce((s, p) => s + (p.v || 0), 0); }
+
+/* 旅行：失信被执行人不能坐飞机高铁，只能去近处 */
+DEST.push(
+  {n:'桂林山水', cost:5000, cap:'竹筏漂在漓江上，两岸的山像一根根竹笋。'},
+  {n:'张家界', cost:7000, cap:'山峰插在云里，像电影里的悬浮山。'},
+  {n:'哈尔滨冰雪大世界', cost:6000, cap:'零下三十度，冰雕在灯光下像水晶宫。'},
+  {n:'敦煌', cost:9000, risk:1, cap:'鸣沙山上驼铃叮当，月牙泉小小的一弯。'},
+  {n:'曼谷', cost:8000, cap:'大皇宫金光闪闪，街边的芒果糯米饭很甜。'},
+  {n:'圣托里尼', cost:40000, cap:'白房子蓝屋顶，夕阳把整个岛染成了橘色。'},
+  {n:'罗马', cost:38000, cap:'斗兽场比课本上的照片旧得多，也大得多。'},
+  {n:'伦敦', cost:38000, cap:'大本钟下的红色电话亭，你排队拍了半小时。'},
+  {n:'迪拜', cost:30000, cap:'哈利法塔高得看不见顶，沙漠里长出了一座城。'},
+  {n:'悉尼', cost:35000, cap:'歌剧院的白色屋顶，像一排鼓起的帆。'},
+  {n:'迪士尼乐园', cost:4000, cap:'城堡上空放烟花的时候，你又变回了小孩。'},
+  {n:'环球邮轮', cost:300000, cap:'在海上漂了一百天，见过了五个大洋。'},
+);
+function travelMenu(free){
+  const bl = S.flags.blacklist && !free;
+  const cs = DEST.map((d, i) => ({d, i})).sort((a, b) => a.d.cost - b.d.cost).map(({d, i}) => ({l:d.n, d:`${free ? '徒步云游' : fmt(d.cost)}${bl && d.cost >= 8000 ? ' · 失信不能坐飞机高铁' : ''}${d.risk >= 2 ? ' · 很危险' : d.risk ? ' · 有风险' : ''}`,
+    dis:() => (!free && S.money < d.cost) || S.ap <= 0 || (d.everest && S.st.health < 70) || (bl && d.cost >= 8000), f:() => { trip(i, free); if (S.alive && d.n === '环球邮轮') unlock('cruise'); }}));
+  cs.push({l:'算了', d:'不消耗行动', f:() => {}});
+  modal(free ? '云游' : '去旅行', S.age >= 70 ? '年纪大了，出远门要格外小心。' : bl ? '你上了失信名单，飞机高铁都坐不了，只能去近处。' : '越远越贵，有些地方很危险。每次旅行都会拍一张照片。', cs, '旅行');
+}
+
+/* ---------- 新的行动 ---------- */
+ACTS.push(
+  {l:'养宠物', m:['kid','teen','uni','adult','old'], ok:() => pets().length < 4, modal:1, d:() => pets().length ? `已有 ${pets().length} 只` : '', f:petShop},
+  {l:'陪宠物', m:['kid','teen','uni','adult','old','homeless','monk'], ok:() => pets().length > 0, d:() => pets().map(p => p.n).join('、'), f:playPet},
+  {l:'还债', m:['uni','adult','old','homeless'], ok:() => debtTotal() > 0, modal:1, d:() => `欠 ${fmt(debtTotal())}`, f:repayMenu},
+  {l:'陪情人', m:['adult','old'], ok:() => !!S.affair, d:() => S.affair.n, f:() => {
+    const A = S.affair;
+    L(pick([`你和${A.n}在酒店待了一个下午。`, `你陪${A.n}看了场电影，全程戴着口罩。`, `你和${A.n}开车去了邻市，那里没人认识你们。`]), 'n', {happy:R(4, 8), stress:R(3, 6)});
+    if (isMarried() && chance(.12)) affairCaught(pick(CAUGHT_HOW));
+  }},
+  {l:'给情人花钱', m:['adult','old'], ok:() => !!S.affair && S.money > 20000, modal:1, d:() => S.affair.n, f:giftMenu},
+  {l:'摆地摊', m:['uni','adult','old','homeless'], ok:() => S.age >= 18, d:() => '', f:() => {
+    const r = Math.random();
+    if (r < .25){ const c = R(5, 30) * 100; L(pick(['城管来了，你推着车跑了三条街，货还是被收走了。', '你占了别人的位置，被几个摊主赶走了。']), 'b', {money:-c, happy:-4, stress:5}); }
+    else if (r < .33){ const c = R(2, 5) * 10000; L('你卖的炒粉被人拍了发到网上，突然火了，门口排起了长队。', 'g', {money:c, happy:8, stress:4}); }
+    else L(pick(['你在夜市摆了一年摊，风吹日晒，攒下了一点钱。', '你卖手机壳和袜子，一晚上能赚个两三百。', '你的烤冷面摊有了几个回头客。']), 'n', {money:R(3, 15) * 1000, health:-R(0, 2), stress:3});
+  }},
+  {l:'直播带货', m:['uni','adult'], ok:() => S.age >= 18, d:() => '', f:() => {
+    const r = Math.random(), f = S.flags;
+    if (r < .55){ const c = R(2, 10) * 1000; L(pick(['你对着手机喊了一年“家人们”，直播间最多的时候只有十几个人。', '你囤了一屋子货，一件都没卖出去。']), 'b', {money:-c, happy:-4, stress:5}); }
+    else if (r < .9){ const c = R(1, 8) * 10000; f.liveEarn = (f.liveEarn || 0) + c; L(pick(['你的直播间慢慢有了些老粉，一年下来赚了点钱。', '你接了几个小品牌的广告，收入还算可以。']), 'g', {money:c, happy:4, stress:4}); }
+    else if (r < .97){ const c = R(50, 300) * 10000; f.liveEarn = (f.liveEarn || 0) + c; L('你的一场直播突然火了，一晚上卖了几十万单！', 'e', {money:c, happy:12, stress:6}); }
+    else { const c = R(5, 30) * 10000; L('你卖的货被查出是假冒伪劣，被平台封号，还赔了一大笔钱。', 'b', {money:-c, happy:-10, stress:12}); }
+    if ((f.liveEarn || 0) >= 1e6) unlock('streamer');
+  }},
+  {l:'跑网约车', m:['adult','old'], ok:() => S.assets.cars.length > 0 && S.age < 66, d:() => '', f:() => {
+    const r = Math.random();
+    if (r < .05){ const c = R(1, 5) * 10000; L('你在路口被一辆闯红灯的车撞了，车头凹了进去。', 'b', {money:-c, health:-R(3, 8), stress:6}); }
+    else if (r < .12) L(pick(['一个醉酒的乘客吐了你一车，还给了你差评。', '乘客下车没付钱就跑了。']), 'b', {money:R(1, 3) * 10000, happy:-4, stress:5});
+    else L(pick(['你每天跑十二个小时，腰越来越不好了。', '你跑了一年网约车，熟悉了这座城市的每一条小路。', '你遇到过形形色色的乘客，听过很多人的故事。']), 'n', {money:R(25, 60) * 1000, health:-R(1, 3), stress:4});
+  }},
+  {l:'烧香算命', m:['teen','uni','adult','old'], d:() => '', f:() => {
+    const r = Math.random(), c = S.age >= 18 ? R(2, 20) * 100 : 0;
+    if (r < .12 && S.age >= 18){ const big = R(1, 5) * 10000; scam(big); L(`大师说你今年有血光之灾，要做场法事化解，收了你 ${fmt(big)}。`, 'b', {money:-big, stress:4}); }
+    else if (r < .5) L(pick(['算命先生摸着胡子说你下半辈子大富大贵。', '你求了一支上上签，走路都轻快了。', '大师说你命里有贵人相助。']), 'g', {money:-c, happy:R(2, 5)});
+    else if (r < .8) L(pick(['算命先生说你今年犯太岁，你一整年都提心吊胆。', '你求了一支下下签，越想越不对劲。']), 'b', {money:-c, stress:R(3, 6), happy:-2});
+    else L(pick(['你在寺庙里坐了一下午，听着钟声，什么也没想。', '你烧了炷香，许了个愿，没告诉任何人。']), 'n', {money:-c, stress:-R(2, 5)});
+  }},
+  {l:'做义工', m:['teen','uni','adult','old'], d:() => '', f:() => {
+    const r = Math.random();
+    if (r < .1 && !S.partner && S.age >= 18){ const n = randName(other()); setPartner(n); L(`你在养老院做义工时认识了${n}，你们在一起了。`, 'g', {happy:10}); }
+    else if (r < .2) L('你去山区支教了一个月，孩子们在你走的那天追着车跑了很远。', 'e', {happy:8, stress:-4});
+    else if (r < .28) L('你在活动里被人当成免费劳动力使唤了一整天，还没落着好。', 'b', {happy:-3, stress:3});
+    else L(pick(['你周末去流浪动物救助站帮忙，给狗狗们洗了一下午澡。', '你在社区帮老人们教用智能手机。', '你在马拉松比赛上当志愿者，给选手递了一天水。']), 'g', {happy:R(2, 5), stress:-R(1, 4)});
+  }},
+);
+
+/* 小时候的宠物事件：真的领回一只宠物 */
+(() => {
+  const e = EV.find(x => x.id === 'pet');
+  if (e) e.r = () => modal('想养宠物', pick(['你在宠物店门口看上了一只小狗，挪不动脚。', '同学家的猫生了一窝小猫，问你要不要一只。', '楼下有只流浪猫天天跟着你回家。']), [
+    {l:'求爸妈买一只', dis:() => !parentsAlive(), f:() => { if (tier() >= 1 || chance(.3)){ const i = pick([0, 1, 6, 10, 15]); const p = getPet(i, 'buy'); famPay(PETS[i].p); L(`爸妈同意了！你给这只${PETS[i].n}取名“${p.n}”。`, 'g', {happy:8}); petPhoto(p, '新成员', `${p.n}来到了你家。`); } else L('爸妈说家里养不起，你哭了一晚上。', 'b', {happy:-5}); }},
+    {l:'抱一只小猫回家', f:() => { const p = getPet(9, 'adopt'); L(`你抱回了一只橘猫，给它取名“${p.n}”，它很快胖成了球。`, 'g', {happy:7}); petPhoto(p, '新成员', `${p.n}一到家就钻进了你的被窝。`); }},
+    {l:'算了', f:() => L('你把它放下，头也不回地走了，回家后想了好几天。', 'n', {happy:-1})},
+  ]);
+  const d = EV.find(x => x.id === 'petdie'); if (d) d.c = () => false;
+})();
+
+/* 跟东西有关的随机事件 */
+EV.push(
+  {id:'burglar', a:[20,90], w:.8, c:() => (S.items || []).some(x => !x.got && PORTABLE.includes(x.k)), r:() => {
+    const x = (S.items || []).filter(x => !x.got && PORTABLE.includes(x.k)).sort((a, b) => b.v - a.v)[0];
+    S.items.splice(S.items.indexOf(x), 1);
+    if (chance(.3)) { S.items.push(x); L(`家里进了贼，偷走了你的${x.n}。三个月后警察破了案，东西完好无损地还了回来。`, 'g', {happy:4}); }
+    else L(`家里进了贼，你的${x.n}被偷走了，再也没找回来。`, 'b', {happy:-8, stress:6});
+  }},
+  {id:'carscrape', a:[20,85], w:.8, c:() => S.assets.cars.length > 0, r:() => { const c = S.assets.cars[0], cost = Math.max(2000, Math.round(c.v * R(2, 8) / 100)); L(pick([`你的${c.n}停在楼下，被人划了一长道。`, `你的${c.n}在停车场被追尾了，对方没买保险。`, `一场暴雨，你的${c.n}被泡在了地库里。`]), 'b', {money:-cost, happy:-4}); c.v = Math.round(c.v * .9); }},
+  {id:'appraise', a:[25,90], w:.7, c:() => (S.items || []).some(x => !x.got && ['vase','painting'].includes(x.k)), r:() => {
+    const x = (S.items || []).find(x => !x.got && ['vase','painting'].includes(x.k));
+    modal('鉴宝节目', `电视台的鉴宝节目来你们市录制，你想带你的${x.n}去看看。`, [
+      {l:'去', f:() => { if (x.fake) L(`专家看了一眼就笑了：“现代仿品。”全场观众都在笑。`, 'b', {happy:-8}); else if (chance(.25)){ x.v = Math.round(x.v * R(2, 5)); L(`专家激动得站了起来：“国宝级的东西！”估价 ${fmt(x.v)}。`, 'e', {happy:12}); } else L(`专家说是真品，估价和你买的时候差不多。`, 'g', {happy:3}); }},
+      {l:'不去，怕露富', f:() => L('你把它锁进了保险柜。', 'n')},
+    ], '收藏');
+  }},
+  {id:'goldjump', a:[25,95], w:.7, c:() => (S.items || []).some(x => x.k === 'goldbar' && !x.got), r:() => { const x = S.items.find(x => x.k === 'goldbar' && !x.got), up = chance(.6); x.v = Math.round(x.v * (up ? 1.15 + Math.random() * .2 : .8 + Math.random() * .1)); L(up ? `金价暴涨，你的${x.n}现在值 ${fmt(x.v)} 了。` : `金价大跌，你的${x.n}缩水到了 ${fmt(x.v)}。`, up ? 'g' : 'b', {happy:up ? 4 : -4}); }},
+  {id:'affairpreg', a:[20,60], w:1.2, c:() => S.affair && isMarried() && !S.flags.secretKid, r:() => modal('情人怀孕了', `${S.affair.n}拿着验孕棒给你看：“你说怎么办？”`, [
+    {l:'给钱，让TA去打掉', d:'20 万', f:() => { if (chance(.65)) L(`${S.affair.n}收了钱，什么也没再说。你好几个晚上没睡着。`, 'b', {money:-200000, stress:12}); else { L(`${S.affair.n}收了钱，转头就去找了${S.partner.name}。`, 'b', {money:-200000}); affairCaught(`${S.affair.n}找上了门`); } }},
+    {l:'生下来，偷偷养', f:() => { S.flags.secretKid = 1; L('孩子出生了。你多了一个不能见光的家。', 'n', {happy:4, stress:15}); }},
+    {l:'摊牌，离婚', f:() => { const n = S.affair.n; divorce(`你向${S.partner.name}摊了牌，你们离婚了。`, .55); setPartner(n); L(`你和${n}光明正大地在一起了。`, 'n', {happy:4}); }},
+  ], '感情')},
+  {id:'flashsale', a:[16,70], w:.8, c:() => S.money > 30000, r:() => modal('双十一', pick(['零点一到，购物车里的东西全都打了折。', '直播间里主播喊着“最后一百单”，你的手指悬在付款键上。']), [
+    {l:'全部付款', f:() => { const c = R(1, 5) * 10000; S.flags.spent = (S.flags.spent || 0) + c; cue('bags'); L(`你清空了购物车，一共花了 ${fmt(c)}。快递堆满了半个客厅。`, 'g', {money:-c, happy:R(2, 5)}); if (chance(.4)) L('一个月后你发现，大部分东西拆都没拆。', 'n', {happy:-2}); }},
+    {l:'忍住，关掉手机', f:() => L('你关掉了手机，心里空落落的，又有点骄傲。', 'n', {stress:-2})},
+  ], '消费')},
+);
+
+/* 新的成就和结局 */
+ACH.push(
+  ['petlover','养过三只宠物','宠','love'], ['oldfriend','陪伴十年的伙伴','伴','love'], ['shopaholic','买买买','购','money'], ['collector','收藏家','藏','study'], ['jet','私人飞机','机','money'], ['cruise','环游世界','航','travel'],
+  ['streamer','带货百万','播','star'], ['pawn','进过当铺','当','dark'], ['blacklist','失信被执行人','失','dark'], ['beaten','被讨债的打过','殴','dark'], ['seized','家产被查封','封','dark'],
+);
+Object.assign(ACHFX, {petlover:'paws', oldfriend:'paws', shopaholic:'bags', collector:'glitter', jet:'meteors', cruise:'plane', streamer:'fireworks', pawn:'rain', blacklist:'seal', beaten:'paint', seized:'seal'});
+ENDINGS.splice(ENDINGS.findIndex(e => e.id === 'accident'), 0, {id:'debtdeath', n:'死于讨债', dark:1, t:s => s.dtype === 'beaten', e:'借的时候有多容易，还的时候就有多难。'});
+ENDINGS.splice(ENDINGS.findIndex(e => e.id === 'debt'), 0, {id:'laolai', n:'老赖', dark:1, t:s => s.flags.blacklist && (s.money < 0 || worth() < 0), e:'名字挂在失信名单上，一挂就是一辈子。'});
+ENDINGS.splice(ENDINGS.findIndex(e => e.id === 'century'), 0, {id:'petpal', n:'毛孩子们的家', t:s => (s.flags.petsEver || 0) >= 4, e:'一辈子，身边总有一个毛茸茸的小家伙。'});
+
+FXRULES.unshift(
+  [/欠债还钱|红油漆|催收|讨债|堵在你家|纹着身/, 'paint'],
+  [/查封|强制执行|拍卖|失信被执行人|冻结|传票|司法拘留/, 'seal'],
+  [/东窗事发|私家侦探|撞见了你们|出卖了你/, 'flash'],
+  [/闭上了眼睛|没能救回来|走丢了|再也没回来/, 'rain'],
+  [/宠物|狗狗|小狗|小猫|猫咪|鹦鹉|仓鼠|兔子|锦鲤|羊驼|球蟒|赛马|一窝|救助站领养/, 'paws'],
+);
+FXRULES.push([/你买了|入手|清空了购物车|快递堆满/, 'bags']);
+
+/* ---------- 每年额外结算：宠物、情人、欠债、收藏 ---------- */
+function extraTick(){
+  if (!S.alive) return;
+  petTick();
+  if (S.alive) affairTick();
+  if (S.alive) debtPressure();
+  if (S.alive){
+    const col = (S.items || []).filter(x => !x.got && !x.fake && ['vase','painting','liquor','goldbar','jet','yacht'].includes(x.k)).length;
+    if (col >= 3) unlock('collector');
+  }
+}
+
+/* ---------- 同一件事，哪怕只做一次，也可能白忙一场，甚至适得其反 ---------- */
+const FLOP = {
+  成长:{z:['书看了一整年，可好像什么都没记进脑子里。', '你坐在书桌前发了一年的呆，学的东西转头就忘。', '学是学了，一到考试脑子就一片空白。'], b:['越学越焦虑，晚上开始失眠。', '你怎么都学不进去，越学越怀疑自己。', '学到最后，你一看到书就犯恶心。'], bad:{stress:[3, 7], happy:[-3, -1]}},
+  身心:{z:['折腾了一阵，身体没什么变化。', '坚持了几天就断了，跟没做一样。'], b:['一不小心拉伤了肌肉，疼了好几天。', '你反而累得够呛，整个人更没精神了。'], bad:{health:[-3, -1], stress:[2, 4]}},
+  玩乐:{z:['玩了一圈，也没觉得多开心。', '热闹是别人的，你只觉得无聊。'], b:['玩得不欢而散，回来一肚子气。', '钱花了，人累了，心情反而更差。'], bad:{happy:[-4, -2], stress:[2, 4]}},
+  工作:{z:['忙了一年，领导好像根本没注意到你。', '做得再多，也没人看见。'], b:['你忙中出错，被领导当众批评。', '卖力干活，功劳却被同事抢走了。'], bad:{happy:[-4, -2], stress:[3, 6]}},
+  家庭:{z:['你们待在一起，却各自刷着手机。', '陪是陪了，话没说上几句。'], b:['本想好好相处，结果又因为小事吵了起来。', '你说错了一句话，气氛一下子僵了。'], bad:{happy:[-4, -2], stress:[2, 4]}},
+};
+function flopCheck(a, cat, before){
+  const F = FLOP[cat]; if (!F || S.age < 3) return false;
+  const gain = {};
+  ['health','smarts','looks','happy'].forEach(k => { const d = S.st[k] - before[k]; if (d > 0) gain[k] = -d; });
+  const ds = S.st.stress - before.stress; if (ds < 0) gain.stress = -ds;
+  if (!Object.keys(gain).length) return false;
+  const p = .1 + (S.st.stress >= 70 ? .08 : 0), bad = .07 + (S.st.stress >= 70 ? .06 : 0) + (S.st.health < 30 ? .05 : 0);
+  const r = Math.random();
+  if (r < p){ L(pick(F.z), 'n', gain); return true; }
+  if (r < p + bad && S.age >= 6){
+    const fx = {...gain};
+    for (const [k, [lo, hi]] of Object.entries(F.bad)) fx[k] = (fx[k] || 0) + R(lo, hi);
+    L(pick(F.b), 'b', fx); return true;
+  }
+  return false;
+}
+
 /* ---------- 天空：随年龄从清晨走到黄昏，去世后入夜；流浪下雨，坐牢阴冷，出家山雾 ---------- */
 /* 每组颜色：[天顶, 天腰, 地平线, 远山, 近山, 日月] */
 const SKY = {
@@ -4299,11 +5507,11 @@ function stageCard(s){
 /* ---------- 行动分类 ---------- */
 const CATS = [
   ['成长', ['咿呀学语','看绘本','上兴趣班','认真学习','课外补习','刷题','泡图书馆','考证','写作','练习才艺','老年大学','读经','在狱中读书']],
-  ['身心', ['呼呼大睡','运动','健身锻炼','休息放空','看医生','戒烟','戒酒','戒赌','晨练遛弯','广场舞','养花钓鱼','打扮自己','放风锻炼','扫地挑水','打坐念经','去救助站','喝酒取暖']],
-  ['玩乐', ['要零花钱','撒娇','到处乱爬','在外面疯玩','看动画片','打游戏','调皮捣蛋','交朋友','逃课出去玩','娱乐放松','夜生活','下棋打牌','去旅行','云游四方']],
-  ['工作', ['找工作','努力工作','按时下班','换工作','谈加薪','辞职','退休','创业','经营公司','打零工','兼职打工','帮家里干活','捡瓶子','乞讨','打日结零工','劳动改造']],
-  ['家庭', ['约会交友','陪伴伴侣','求婚','分手','要孩子','辅导孩子','陪伴家人','带孙子','找情人','断了情人','离婚','写信回家']],
-  ['钱财', ['借钱','买新东西','消费购物','理财投资','赌一把','卖房卖车','做慈善','租个小房间']],
+  ['身心', ['呼呼大睡','运动','健身锻炼','休息放空','看医生','戒烟','戒酒','戒赌','晨练遛弯','广场舞','养花钓鱼','打扮自己','做义工','放风锻炼','扫地挑水','打坐念经','去救助站','喝酒取暖']],
+  ['玩乐', ['要零花钱','撒娇','到处乱爬','在外面疯玩','看动画片','打游戏','调皮捣蛋','交朋友','逃课出去玩','娱乐放松','夜生活','下棋打牌','烧香算命','去旅行','云游四方']],
+  ['工作', ['找工作','努力工作','按时下班','换工作','谈加薪','辞职','退休','创业','经营公司','打零工','兼职打工','摆地摊','直播带货','跑网约车','帮家里干活','捡瓶子','乞讨','打日结零工','劳动改造']],
+  ['家庭', ['约会交友','陪伴伴侣','求婚','分手','要孩子','辅导孩子','陪伴家人','带孙子','养宠物','陪宠物','找情人','陪情人','给情人花钱','断了情人','离婚','写信回家']],
+  ['钱财', ['借钱','还债','买新东西','消费购物','理财投资','赌一把','变卖家当','做慈善','租个小房间']],
 ];
 const catOf = l => (CATS.find(([, ls]) => ls.includes(l)) || ['其他'])[0];
 let curTab = null;
@@ -4439,7 +5647,7 @@ function render(){
   $('#actsCard').hidden = !S.alive;
   $('#ending').hidden = S.alive;
   $('#albumBtn').textContent = `相册 ${S.photos.length}`; $('#albumBtn').disabled = !S.photos.length;
-  const ng = S.assets.houses.length + S.assets.cars.length + (S.items || []).length;
+  const ng = S.assets.houses.length + S.assets.cars.length + (S.items || []).length + (S.pets || []).length + (S.petMem || []).length;
   $('#goodsBtn').textContent = `物品 ${ng}`; $('#goodsBtn').disabled = !ng;
   if (S.alive) renderActs();
   else {
@@ -4613,5 +5821,3 @@ function start(data){
 window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
 })();
 </script>
-
-</html>
