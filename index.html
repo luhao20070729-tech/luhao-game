@@ -1430,7 +1430,7 @@ function die(cause, type = ''){
   L(`${S.name}在 ${S.age} 岁时${cause}。`, 'e');
   S.done = 1;
   const st = S.st;
-  S.score = Math.max(0, Math.round(S.age + (st.health + st.smarts + st.looks + st.happy) / 4 - st.stress / 8 + Math.log10(Math.max(worth(), 1)) * 10 + S.edu * 6 + S.kids.length * 8 + S.grand * 4 + S.ach.length * 12 + (S.partner && S.partner.married ? 15 : 0) + Math.log10(Math.max(S.flags.charity || 0, 1)) * 5 - (S.flags.jailed ? 30 : 0) - (S.flags.homeless ? 30 : 0)));
+  const sc = scoreLife(); S.score = sc.total; S.scoreParts = sc.parts;
   const end = ENDINGS.find(e => e.t(S));
   S.end = end.id;
   const seen = loadEndings();
@@ -5321,6 +5321,8 @@ FXRULES.push([/你买了|入手|清空了购物车|快递堆满/, 'bags']);
 /* ---------- 每年额外结算：宠物、情人、欠债、收藏 ---------- */
 function extraTick(){
   if (!S.alive) return;
+  const A = S.acc = S.acc || {n:0, h:0, s:0, l:0, p:0, t:0};
+  A.n++; A.h += S.st.health; A.s += S.st.smarts; A.l += S.st.looks; A.p += S.st.happy; A.t += S.st.stress;
   petTick();
   if (S.alive) affairTick();
   if (S.alive) debtPressure();
@@ -5754,7 +5756,46 @@ evSet('j_visit', () => vrun('ev:jvisit'));
 evSet('novisit', () => vrun('ev:novisit'));
 
 /* ---------- 人生总结图：一张可以保存、发给朋友比较的长图 ---------- */
-const SCKEY = 'fusheng-scores-v1';
+/* 满分 1000：寿命 200 · 身心 200 · 财富 150 · 家庭 150 · 成就见识 200 · 品行 100，每一项越往上越难 */
+const SCORE_PARTS = [['寿命', 200], ['身心', 200], ['财富', 150], ['家庭', 150], ['成就见识', 200], ['品行', 100]];
+function scoreLife(){
+  const f = S.flags, A = S.acc && S.acc.n ? S.acc : null, st = S.st;
+  const life = 200 * Math.pow(Math.min(S.age, 100) / 100, 1.3);
+  // 身心看的是一辈子的平均状态，不只是临死前那一刻
+  const av = k => A[k] / A.n;
+  const v = A ? av('h') * .25 + av('p') * .35 + av('s') * .2 + av('l') * .1 + (100 - av('t')) * .1
+              : st.health * .25 + st.happy * .35 + st.smarts * .2 + st.looks * .1 + (100 - st.stress) * .1;
+  const body = 200 * Math.pow(clamp(v, 0, 100) / 100, 1.5) * Math.min(1, (S.age + 20) / 70);   // 活得太短，身心分要打折
+  const wealth = 150 * clamp((Math.log10(Math.max(worth(), 1)) - 4) / 5, 0, 1);
+  const P = S.partner, kids = S.kids.filter(k => !k.dead);
+  let fam = P && P.married ? 20 + Math.min(40, (S.age - P.since) * .8) : S.ach.includes('married') ? 15 : f.everLoved ? 5 : 0;
+  fam += Math.min(3, kids.length) * 12 + (kids.some(k => k.filial) ? 14 : 0) + Math.min(40, (S.grand || 0) * 10);
+  fam = Math.min(150, fam);
+  const places = new Set(S.photos.map(p => p.p)).size;
+  const achv = 140 * Math.pow(Math.min(1, S.ach.length / 40), .9) + Math.min(30, places * 1.5) + S.edu / 7 * 15 + Math.min(15, (f.talent || 0) + (f.author || 0) * 5);
+  let moral = 60 + ((f.charity || 0) >= 1000 ? Math.min(25, (Math.log10(f.charity) - 3) / 4 * 25) : 0) + (S.ms.some(m => /救了一个孩子/.test(m.t)) || /救人/.test(S.cause) ? 15 : 0);
+  if (f.jailed) moral -= 40;
+  if (f.wasHomeless) moral -= 10;
+  if (f.blacklist) moral -= 30;
+  if (f.caught) moral -= 25;
+  if ((f.scamLost || 0) >= 300000) moral -= 10;
+  if (f.gambler) moral -= 15;
+  if (f.corrupt) moral -= 30;
+  moral = Math.min(100, moral);
+  const parts = [life, body, wealth, fam, achv, moral].map(x => Math.round(x));
+  return {total:clamp(parts.reduce((a, b) => a + b, 0), 0, 1000), parts};
+}
+const GRADES = [[950, 'SSS', '完美的一生'], [850, 'SS', '史诗般的一生'], [750, 'S', '传奇的一生'], [600, 'A', '精彩的一生'], [450, 'B', '圆满的一生'], [300, 'C', '平凡的一生'], [0, 'D', '坎坷的一生']];
+const GRADE = s => { const x = GRADES.find(([m]) => s >= m); return [x[1], x[2]]; };
+const GRADE_CSS = {SSS:'background:linear-gradient(90deg,#FF5A5F,#FFB400,#3ADB8A,#2FB4E8,#B05CF0);color:#fff', SS:'background:linear-gradient(135deg,#5B2D8E,#9A5CC8);color:#FFE7A8;box-shadow:0 0 0 2px #E2B455 inset', S:'background:linear-gradient(135deg,#B8862B,#F2C96A);color:#3A2410'};
+function gradeHTML(s){ const [gl, gw] = GRADE(s); return `<span style="display:inline-block;padding:4px 14px;border-radius:999px;font-weight:700;letter-spacing:.06em;${GRADE_CSS[gl] || 'background:#B23A2E;color:#FFF3E0'}">${gl} · ${gw}</span>`; }
+function gradeFill(g, gl, x, y, r){
+  if (gl === 'SSS'){ const gr = g.createLinearGradient(x - r, y - r, x + r, y + r); ['#FF5A5F', '#FFB400', '#3ADB8A', '#2FB4E8', '#B05CF0'].forEach((c, i) => gr.addColorStop(i / 4, c)); return gr; }
+  if (gl === 'SS'){ const gr = g.createLinearGradient(x - r, y - r, x + r, y + r); gr.addColorStop(0, '#4A2378'); gr.addColorStop(1, '#9A5CC8'); return gr; }
+  if (gl === 'S'){ const gr = g.createLinearGradient(x - r, y - r, x + r, y + r); gr.addColorStop(0, '#9C6B1C'); gr.addColorStop(.5, '#F2C96A'); gr.addColorStop(1, '#B8862B'); return gr; }
+  return '#B23A2E';
+}
+const SCKEY = 'fusheng-scores-v2';
 function loadScores(){ try { return JSON.parse(localStorage.getItem(SCKEY)) || []; } catch (e) { return []; } }
 function recordScore(){
   if (!S || S.alive || S.scored) return;
@@ -5771,7 +5812,6 @@ function scoreRank(){
   const best = others.reduce((a, b) => b.s > a.s ? b : a);
   return `超过了你 ${Math.round(others.filter(x => x.s < S.score).length / others.length * 100)}% 的人生 · 你的历史最高是 ${best.s} 分（${best.n}）`;
 }
-const GRADE = s => s >= 560 ? ['S', '传奇的一生'] : s >= 440 ? ['A', '精彩的一生'] : s >= 330 ? ['B', '圆满的一生'] : s >= 220 ? ['C', '平凡的一生'] : ['D', '坎坷的一生'];
 function wrapLines(g, text, maxW){
   const out = []; let cur = '';
   for (const ch of String(text)){
@@ -5796,7 +5836,7 @@ function cardPics(){
 async function makeCard(){
   const end = ENDINGS.find(e => e.id === S.end) || ENDINGS[ENDINGS.length - 1];
   // 网页字体是按需下载的，先把要画的字都加载好，否则画出来是方框
-  const need = '浮生一世结局人生节点照片墙最后的模样成就个你的人生会比我精彩吗传奇精彩圆满平凡坎坷一生岁零0123456789SABCD·' + S.name + S.cause + end.n + end.e + S.ach.map(id => (ACH.find(a => a[0] === id) || [])[2] || '').join('');
+  const need = '浮生一世结局人生节点照片墙最后的模样成就个你的人生会比我精彩吗传奇精彩圆满平凡坎坷史诗般完美一生岁零六项得分寿命身心财富家庭见识品行0123456789SABCD·' + S.name + S.cause + end.n + end.e + S.ach.map(id => (ACH.find(a => a[0] === id) || [])[2] || '').join('');
   try { await Promise.race([Promise.all(['400', '700'].map(w => document.fonts.load(`${w} 48px "ZCOOL XiaoWei"`, need))), new Promise(r => setTimeout(r, 4000))]); await document.fonts.ready; } catch (e) {}
   const pics = await Promise.all(cardPics().map(async ([u, n]) => [await loadImg(u), n]));
   const W = 1080, P = 76, CW = W - P * 2;
@@ -5827,16 +5867,35 @@ async function makeCard(){
   if (S.newEnd){ g.save(); g.translate(W - P - 30, y + 18); g.rotate(.22); g.fillStyle = RED; rrect(g, -70, -22, 140, 44, 8); g.fill(); txt('新结局', 0, 12, FS(700, 28), '#FFF', 'center'); g.restore(); }
   y += bh + 70;
   // 评分
-  const [gl, gw] = GRADE(S.score);
-  g.fillStyle = RED; g.beginPath(); g.arc(P + 110, y + 40, 92, 0, 6.29); g.fill();
-  g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 3; g.beginPath(); g.arc(P + 110, y + 40, 78, 0, 6.29); g.stroke();
-  txt(gl, P + 110, y + 76, F(700, 104), '#FFF8EC', 'center');
+  const [gl, gw] = GRADE(S.score), gx = P + 110, gy = y + 40;
+  if (gl === 'SSS' || gl === 'SS'){ g.save(); g.shadowColor = gl === 'SSS' ? 'rgba(255,180,0,.8)' : 'rgba(154,92,200,.8)'; g.shadowBlur = 30; g.fillStyle = gradeFill(g, gl, gx, gy, 92); g.beginPath(); g.arc(gx, gy, 92, 0, 6.29); g.fill(); g.restore(); }
+  g.fillStyle = gradeFill(g, gl, gx, gy, 92); g.beginPath(); g.arc(gx, gy, 92, 0, 6.29); g.fill();
+  g.strokeStyle = gl === 'SS' ? '#E2B455' : 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.beginPath(); g.arc(gx, gy, 78, 0, 6.29); g.stroke();
+  txt(gl, gx, gy + (gl.length > 1 ? 26 : 36), F(700, gl.length === 3 ? 58 : gl.length === 2 ? 78 : 104), gl === 'S' ? '#3A2410' : '#FFF8EC', 'center');
   txt('人生评分', P + 250, y - 6, FS(400, 30), GREY);
   txt(String(S.score), P + 250, y + 92, F(700, 112), INK);
-  txt(gw, P + 250 + g.measureText(String(S.score)).width + 26, y + 88, F(400, 42), RED);
+  const sw = g.measureText(String(S.score)).width;
+  txt('/ 1000', P + 250 + sw + 14, y + 92, FS(400, 34), GREY);
+  g.font = FS(400, 34); const sw2 = g.measureText('/ 1000').width;
+  txt(gw, P + 250 + sw + sw2 + 40, y + 90, F(400, 42), gl === 'SSS' || gl === 'SS' || gl === 'S' ? '#9C6B1C' : RED);
   y += 170;
   g.font = FS(400, 32); wrapLines(g, scoreRank(), CW).forEach(l => { txt(l, P, y, FS(400, 32), GREY); y += 44; });
   y += 40;
+  // 六项得分：六边形能力图
+  const parts = S.scoreParts || scoreLife().parts;
+  y = head('六项得分', y);
+  const cx = W / 2, cy = y + 250, RR = 190, ang = i => -Math.PI / 2 + i * Math.PI / 3, pt = (i, r) => [cx + Math.cos(ang(i)) * r, cy + Math.sin(ang(i)) * r];
+  for (let k = 1; k <= 4; k++){ g.beginPath(); for (let i = 0; i < 6; i++){ const [x, yy] = pt(i, RR * k / 4); i ? g.lineTo(x, yy) : g.moveTo(x, yy); } g.closePath(); g.strokeStyle = LINE; g.lineWidth = 2; g.stroke(); }
+  for (let i = 0; i < 6; i++){ const [x, yy] = pt(i, RR); g.beginPath(); g.moveTo(cx, cy); g.lineTo(x, yy); g.stroke(); }
+  g.beginPath(); parts.forEach((v, i) => { const [x, yy] = pt(i, RR * clamp(v / SCORE_PARTS[i][1], .02, 1)); i ? g.lineTo(x, yy) : g.moveTo(x, yy); }); g.closePath();
+  g.fillStyle = 'rgba(178,58,46,.22)'; g.fill(); g.strokeStyle = RED; g.lineWidth = 4; g.stroke();
+  parts.forEach((v, i) => { const [x, yy] = pt(i, RR * clamp(v / SCORE_PARTS[i][1], .02, 1)); g.fillStyle = RED; g.beginPath(); g.arc(x, yy, 8, 0, 6.29); g.fill(); });
+  parts.forEach((v, i) => {
+    const [x, yy] = pt(i, RR + 62), al = Math.abs(x - cx) < 10 ? 'center' : x > cx ? 'left' : 'right', dx = al === 'left' ? -18 : al === 'right' ? 18 : 0;
+    txt(SCORE_PARTS[i][0], x + dx, yy - 4, F(700, 36), INK, al);
+    txt(`${v} / ${SCORE_PARTS[i][1]}`, x + dx, yy + 34, FS(400, 28), v < 0 ? RED : GREY, al);
+  });
+  y = cy + RR + 130;
   // 数值
   y = head('最后的模样', y);
   const ST = [['健康', 'health', '#4E9A6A'], ['智力', 'smarts', '#4A78B8'], ['颜值', 'looks', '#C8668A'], ['快乐', 'happy', '#D9A23A']];
@@ -6271,7 +6330,8 @@ function render(){
   else {
     const end = ENDINGS.find(e => e.id === S.end) || ENDINGS[ENDINGS.length - 1];
     $('#ending').innerHTML = `
-      <div class="tag">${esc(S.name)} · 享年 ${S.age} 岁 · 人生评分 ${S.score}</div>
+      <div class="tag">${esc(S.name)} · 享年 ${S.age} 岁 · 人生评分 ${S.score} / 1000</div>
+      <div style="margin:6px 0">${gradeHTML(S.score)}</div>
       <div class="title">${esc(end.n)}</div>
       <div>${esc(end.e)}</div>
       <div class="row"><button class="btn primary" id="again">再活一次</button><button class="btn" id="cardBtn">人生总结图</button><button class="btn" id="replay">重看谢幕</button></div>`;
@@ -6341,7 +6401,8 @@ function showFinale(){
     ${ph.length ? `<div class="album fs" style="--d:${nd(.3)}">${ph.map(p => photoHTML(p.p, p.s, p.a)).join('')}</div>` : ''}
     <div class="fs" style="--d:${nd(.6)}"><span class="ttl${end.dark ? ' dark' : ''}">${esc(end.n)}</span>${S.newEnd ? '<span class="new">新结局</span>' : ''}</div>
     <div class="epi fs" style="--d:${nd(.5)}">${esc(end.e)}</div>
-    <div class="score fs" style="--d:${nd(.6)}"><span id="finScore">0</span><small>人生评分</small></div>
+    <div class="score fs" style="--d:${nd(.6)}"><span id="finScore">0</span><small>人生评分 · 满分 1000</small></div>
+    <div class="fs" style="--d:${nd(.9)};margin:8px 0 4px;font-size:18px">${gradeHTML(S.score)}</div>
     ${S.ach.length ? `<div class="badges">${S.ach.map(id => ACH.find(a => a[0] === id)).filter(Boolean).map(([, n, s]) => `<span class="badge" style="--d:${nd(.07)}"><i>${esc(s)}</i>${esc(n)}</span>`).join('')}</div>` : ''}
     <div class="coll fs" style="--d:${nd(.3)}">这一世解锁成就 ${S.ach.length} 个 · 已收集结局 ${seen.length} / ${ENDINGS.length}</div>
     <div class="row fs" style="--d:${nd(.2)}"><button class="btn primary" id="finCard">生成人生总结图</button><button class="btn" id="finAgain">再活一次</button><button class="btn" id="finClose">回看人生记录</button></div>
@@ -6350,6 +6411,12 @@ function showFinale(){
   const scoreAt = reduced ? 0 : parseFloat(fin.querySelector('.score').style.getPropertyValue('--d')) * 1000;
   const score = S.score;
   setTimeout(() => { const el = $('#finScore'); if (el) animateNumber(el, 0, score, v => Math.round(v)); }, scoreAt);
+  if (score >= 750){
+    const me = S;
+    setTimeout(() => { if (S !== me) return; cue(score >= 950 ? 'fireworks' : score >= 850 ? 'meteors' : 'glitter'); toast(`<b>${GRADE(score)[0]}</b>　${GRADE(score)[1]}`, 'ach'); }, scoreAt + 900);
+    if (score >= 850) setTimeout(() => { if (S === me) cue(score >= 950 ? 'glitter' : 'fireworks'); }, scoreAt + 2600);
+    if (score >= 950) setTimeout(() => { if (S === me) cue('meteors'); }, scoreAt + 4200);
+  }
   $('#finAgain').onclick = () => { fin.hidden = true; clearSave(); showStart(); };
   $('#finClose').onclick = () => { fin.hidden = true; };
   $('#finCard').onclick = showShareCard;
