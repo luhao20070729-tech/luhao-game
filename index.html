@@ -735,6 +735,7 @@ function paText(t){
 }
 function L(text, kind = 'n', fx = {}, raw = false){
   if (S.done) return;
+  if (ALT[text]) text = pick([text, ...ALT[text]]);
   if (!raw) text = paText(text);
   let g = S.log[S.log.length - 1];
   if (!g || g.age !== S.age){ g = {age:S.age, items:[]}; S.log.push(g); }
@@ -3384,7 +3385,7 @@ function doAction(a){
   S.yr = S.yr || {}; S.hab = S.hab || {};
   if (a.modal){ a.f(); afterChange(); return; }
   const rep = S.yr[a.l] = (S.yr[a.l] || 0) + 1, hab = S.hab[a.l] || 0, cat = catOf(a.l), before = {...S.st};
-  spend(); a.f();
+  spend(); if (VARY[a.l]) varyRun(a); else a.f();
   if (S.alive && !S.done && !flopCheck(a, cat, before)) afterEffects(a, cat, rep, hab, before);
   if (S.alive && !S.done && SIDE[cat] && chance(.08)) pick(SIDE[cat])();
   afterChange();
@@ -4310,15 +4311,17 @@ function drawCat(g, r, o){
   const bw = (o.fat ? 52 : 42) * s, bh = 86 * s, top = by - bh;
   g.beginPath(); g.moveTo(cx - 16 * s, top); g.bezierCurveTo(cx - bw, by - bh * .35, cx - bw * 1.05, by, cx - bw * .55, by); g.lineTo(cx + bw * .55, by); g.bezierCurveTo(cx + bw * 1.05, by, cx + bw, by - bh * .35, cx + 16 * s, top); g.closePath();
   const bg = g.createLinearGradient(cx - bw, 0, cx + bw, 0); bg.addColorStop(0, tone(C, .12)); bg.addColorStop(.6, C); bg.addColorStop(1, D); g.fillStyle = bg; g.fill();
+  if (o.patch){ g.save(); g.clip(); o.patch.forEach((pc, k) => { g.fillStyle = pc; g.beginPath(); g.ellipse(cx + (k ? 24 : -22) * s, top + (k ? 54 : 26) * s, 24 * s, 17 * s, k + .4, 0, 6.29); g.fill(); }); g.restore(); }
   if (o.tabby){ g.save(); g.clip(); g.strokeStyle = D; g.lineWidth = 4 * s; for (let k = 0; k < 6; k++){ const y = top + 14 * s + k * 12 * s; [-1, 1].forEach(d => { g.beginPath(); g.moveTo(cx + d * bw, y); g.quadraticCurveTo(cx + d * bw * .55, y + 4 * s, cx + d * bw * .3, y - 2 * s); g.stroke(); }); } g.restore(); }
   if (o.fluffy) for (let k = 0; k <= 10; k++){ const t = k / 10, y = top + t * bh, x = (16 + (bw / s - 14) * Math.sin(t * Math.PI * .8)) * s; [-1, 1].forEach(d => circ(g, cx + d * x, y, 6 * s, d < 0 ? tone(C, .1) : C)); }
   g.fillStyle = C2; g.beginPath(); g.ellipse(cx, by - bh * .45, 15 * s, bh * .34, 0, 0, 6.29); g.fill();
   [-1, 1].forEach(d => { const lx = cx + d * 10 * s; g.fillStyle = C; rrect(g, lx - 6 * s, by - bh * .5, 12 * s, bh * .5, 5 * s); g.fill(); g.fillStyle = P || C2; g.beginPath(); g.ellipse(lx, by - 3 * s, 8 * s, 4.5 * s, 0, 0, 6.29); g.fill(); });
   g.lineCap = 'round'; g.strokeStyle = P || D; g.lineWidth = (o.fluffy ? 13 : 9) * s; g.beginPath(); g.moveTo(cx + bw * .7, by - 6 * s); g.bezierCurveTo(cx + bw * 1.3, by + 2 * s, cx - 10 * s, by + 8 * s, cx - bw * .9, by - 2 * s); g.stroke();
   const hy = top - 18 * s, hw = 31 * s * (o.hw || 1), hh = 27 * s, eh = (o.bigEar ? 34 : 26) * s;
-  [-1, 1].forEach(d => { poly(g, [[cx + d * hw * .15, hy - hh * .6], [cx + d * hw * .95, hy - hh * .25], [cx + d * hw * .82, hy - hh * .5 - eh]]); g.fillStyle = P || C; g.fill(); poly(g, [[cx + d * hw * .35, hy - hh * .55], [cx + d * hw * .82, hy - hh * .35], [cx + d * hw * .76, hy - hh * .45 - eh * .7]]); g.fillStyle = '#EFA6A6'; g.fill(); });
+  [-1, 1].forEach(d => { poly(g, [[cx + d * hw * .15, hy - hh * .6], [cx + d * hw * .95, hy - hh * .25], [cx + d * hw * .82, hy - hh * .5 - eh]]); g.fillStyle = o.patch ? (d < 0 ? o.patch[0] : o.patch[1] || C) : P || C; g.fill(); poly(g, [[cx + d * hw * .35, hy - hh * .55], [cx + d * hw * .82, hy - hh * .35], [cx + d * hw * .76, hy - hh * .45 - eh * .7]]); g.fillStyle = '#EFA6A6'; g.fill(); });
   const hg = g.createRadialGradient(cx - 8 * s, hy - 8 * s, 3, cx, hy, hw * 1.2); hg.addColorStop(0, tone(C, .16)); hg.addColorStop(1, C);
   g.fillStyle = hg; g.beginPath(); g.ellipse(cx, hy, hw, hh, 0, 0, 6.29); g.fill();
+  if (o.patch){ g.save(); g.beginPath(); g.ellipse(cx, hy, hw, hh, 0, 0, 6.29); g.clip(); g.fillStyle = o.patch[0]; g.beginPath(); g.ellipse(cx - hw * .55, hy - hh * .5, hw * .62, hh * .58, .3, 0, 6.29); g.fill(); if (o.patch[1]){ g.fillStyle = o.patch[1]; g.beginPath(); g.ellipse(cx + hw * .62, hy - hh * .55, hw * .45, hh * .45, -.3, 0, 6.29); g.fill(); } g.restore(); }
   if (P){ g.save(); g.beginPath(); g.ellipse(cx, hy, hw, hh, 0, 0, 6.29); g.clip(); const pg = g.createRadialGradient(cx, hy + hh * .3, 2, cx, hy + hh * .2, hw * .85); pg.addColorStop(0, P); pg.addColorStop(.7, tone(P, .25)); pg.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = pg; g.fillRect(cx - hw, hy - hh, hw * 2, hh * 2); g.restore(); }
   if (o.tabby){ g.strokeStyle = D; g.lineWidth = 3 * s; g.beginPath(); g.moveTo(cx - 9 * s, hy - hh * .45); g.lineTo(cx - 5 * s, hy - hh * .8); g.lineTo(cx, hy - hh * .5); g.lineTo(cx + 5 * s, hy - hh * .8); g.lineTo(cx + 9 * s, hy - hh * .45); g.stroke(); [-1, 1].forEach(d => { g.beginPath(); g.moveTo(cx + d * hw * .98, hy - 2 * s); g.lineTo(cx + d * hw * .66, hy); g.moveTo(cx + d * hw * .96, hy + 6 * s); g.lineTo(cx + d * hw * .7, hy + 6 * s); g.stroke(); }); }
   if (o.wrinkle){ g.strokeStyle = tone(C, -.2); g.lineWidth = 1.2; for (let k = 0; k < 3; k++){ g.beginPath(); g.moveTo(cx - 10 * s, hy - hh * .5 + k * 5 * s); g.quadraticCurveTo(cx, hy - hh * .58 + k * 5 * s, cx + 10 * s, hy - hh * .5 + k * 5 * s); g.stroke(); } }
@@ -4344,6 +4347,22 @@ function drawHamster(g, r, o){
   g.fillStyle = '#E58C96'; g.beginPath(); g.ellipse(cx, cy - 4, 3.5, 2.5, 0, 0, 6.29); g.fill();
   g.fillStyle = '#6B4A2E'; g.beginPath(); g.ellipse(cx, cy + 10, 6, 10, 0, 0, 6.29); g.fill(); g.strokeStyle = '#F4E7CF'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx, cy + 2); g.lineTo(cx, cy + 18); g.stroke();
   [-1, 1].forEach(d => circ(g, cx + d * 6, cy + 10, 4, '#F2B8B8'));
+}
+function drawHedgehog(g, r){
+  const cx = 150, by = 196, bx = cx - 6, byy = by - 12;
+  floorShadow(g, cx + 10, by, 70, 8, .35);
+  g.lineCap = 'round';
+  for (let k = 0; k < 90; k++){ const a = Math.PI * 1.02 + (k / 89) * Math.PI * .96, rr = 60 + (k % 3) * 5; g.strokeStyle = k % 2 ? '#3E3026' : '#8A7258'; g.lineWidth = 3; g.beginPath(); g.moveTo(bx + Math.cos(a) * 36, byy + Math.sin(a) * 28); g.lineTo(bx + Math.cos(a) * rr * 1.08, byy + Math.sin(a) * rr * .82); g.stroke(); }
+  const bgr = g.createRadialGradient(bx - 14, byy - 26, 6, bx, byy, 64); bgr.addColorStop(0, '#9A8064'); bgr.addColorStop(1, '#4E3E30');
+  g.fillStyle = bgr; g.beginPath(); g.ellipse(bx, byy, 60, 48, 0, Math.PI, 0); g.lineTo(bx + 60, byy + 8); g.lineTo(bx - 60, byy + 8); g.fill();
+  for (let k = 0; k < 120; k++){ const x = bx - 52 + r() * 104, y = byy - 44 + r() * 46; if (((x - bx) / 58) ** 2 + ((y - byy) / 46) ** 2 > 1) continue; g.strokeStyle = r() < .5 ? 'rgba(240,225,200,.55)' : 'rgba(30,20,15,.5)'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(x, y); g.lineTo(x - 4 + r() * 2, y - 7); g.stroke(); }
+  g.fillStyle = '#E8D2B0'; g.beginPath(); g.ellipse(cx + 46, by - 18, 26, 20, -.1, 0, 6.29); g.fill();
+  g.beginPath(); g.ellipse(cx + 70, by - 12, 12, 8, .15, 0, 6.29); g.fill();
+  circ(g, cx + 81, by - 12, 4, '#2A1E18'); circ(g, cx + 80, by - 13.5, 1.2, 'rgba(255,255,255,.7)');
+  circ(g, cx + 54, by - 26, 3.6, '#1A120E'); circ(g, cx + 53, by - 27.5, 1.2, '#FFF');
+  circ(g, cx + 34, by - 34, 7, '#C9A880'); circ(g, cx + 34, by - 34, 3.5, '#E8B8A8');
+  g.fillStyle = 'rgba(240,140,150,.4)'; g.beginPath(); g.ellipse(cx + 56, by - 14, 6, 3.5, 0, 0, 6.29); g.fill();
+  g.fillStyle = '#C9A880'; [[cx + 30, by - 2], [cx - 30, by - 2]].forEach(([x, y]) => { g.beginPath(); g.ellipse(x, y, 8, 4, 0, 0, 6.29); g.fill(); });
 }
 function drawRabbit(g, r, o){
   const cx = 160, by = 204;
@@ -4456,7 +4475,7 @@ DRAW.pet = (g, i, r) => {
   const P = PETS[i] || PETS[0], o = P.art;
   const bgs = {room:petRoom, lawn:petLawn, tank:petTank, cage:petCage, field:petField};
   if (o.bg !== 'none') (bgs[o.bg === 'any' ? (r() < .5 ? 'room' : 'lawn') : o.bg] || petRoom)(g, r);
-  ({dog:drawDog, cat:drawCat, hamster:drawHamster, rabbit:drawRabbit, turtle:drawTurtle, parrot:drawParrot, koi:drawKoi, alpaca:drawAlpaca, snake:drawSnake, horse:drawHorse}[o.t])(g, r, o);
+  ({dog:drawDog, cat:drawCat, hedgehog:drawHedgehog, hamster:drawHamster, rabbit:drawRabbit, turtle:drawTurtle, parrot:drawParrot, koi:drawKoi, alpaca:drawAlpaca, snake:drawSnake, horse:drawHorse}[o.t])(g, r, o);
   const v = g.createRadialGradient(160, 110, 100, 160, 110, 220); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.25)'); g.fillStyle = v; g.fillRect(0, 0, 320, 220);
 };
 
@@ -4763,6 +4782,14 @@ const PETS = [
   {n:'羊驼', p:60000, life:[15,20], cost:20000, joy:4, kind:'big', yard:1, art:{t:'alpaca', bg:'field'}},
   {n:'球蟒', p:3000, life:[20,30], cost:1500, joy:1, kind:'small', art:{t:'snake', bg:'none'}},
   {n:'纯血赛马', p:3000000, life:[22,28], cost:300000, joy:4, kind:'big', race:1, yard:1, art:{t:'horse', bg:'field'}},
+  // 下面这些买不到，只能在路上遇到
+  {n:'狸花猫', p:200, stray:1, life:[13,18], cost:3000, joy:4, kind:'cat', art:{t:'cat', bg:'room', c:'#8A7A62', c2:'#E8DCC6', d:'#4A3E30', tabby:1, eye:'#B8C94A'}},
+  {n:'三花猫', p:200, stray:1, life:[13,18], cost:3000, joy:4, kind:'cat', art:{t:'cat', bg:'room', c:'#F7F2EA', c2:'#FFFFFF', d:'#D8D0C4', patch:['#E8963A', '#2A2420'], eye:'#D9B23A'}},
+  {n:'黑猫', p:200, stray:1, life:[13,18], cost:3000, joy:4, kind:'cat', art:{t:'cat', bg:'room', c:'#26262C', c2:'#34343C', d:'#111114', eye:'#E8C23A', muzzle:'#3A3A42'}},
+  {n:'奶牛猫', p:200, stray:1, life:[13,18], cost:3000, joy:4, kind:'cat', art:{t:'cat', bg:'room', c:'#FBFBF8', c2:'#FFFFFF', d:'#D8D8D4', patch:['#1E1E22', '#1E1E22'], eye:'#7AB648'}},
+  {n:'小黑狗', p:200, stray:1, life:[12,16], cost:3000, joy:4, kind:'dog', art:{t:'dog', bg:'any', c:'#24242A', c2:'#3E3E46', ear:'up', curl:1, earIn:'#5A4A4A'}},
+  {n:'瘸腿的老黄狗', p:100, stray:1, life:[5,9], cost:3000, joy:5, kind:'dog', art:{t:'dog', bg:'any', c:'#C9A06A', c2:'#E8D2AE', ear:'flop', tongue:false, collar:false}},
+  {n:'小刺猬', p:100, stray:1, wild:1, life:[4,7], cost:800, joy:3, kind:'small', art:{t:'hedgehog', bg:'lawn'}},
 ];
 const PET_NAMES = ['豆豆','旺财','来福','大黄','小白','球球','可乐','奶茶','布丁','年糕','团子','煤球','雪球','花卷','咪咪','小橘','元宝','皮蛋','土豆','馒头','七七','多多','毛毛','乐乐','饭团','芝麻','汤圆','黑豆','闪电','大福'];
 const PET_DEP = {dog:.85, cat:.86, small:.7, bird:.98, fish:1.03, big:.93};
@@ -4783,7 +4810,7 @@ function petCard(p, big){ return photoCard('pet', p.i, p.s, p.n, `${PETS[p.i].n}
 function petPhoto(p, title, text){ modal(title, text, [{l:pick(['抱一抱','摸摸头','收好照片'])}], '宠物', petCard(p, true)); }
 function petShop(){
   const minor = S.age < 18, cap = [300, 3000, 10000, 30000, 200000][tier()];
-  const cs = PETS.map((P, i) => {
+  const cs = PETS.map((P, i) => [P, i]).filter(([P]) => !P.stray).map(([P, i]) => {
     const price = P.p;
     const why = P.yard && !hasYard() ? ' · 要有带院子的房子' : '';
     return {l:P.n, d:`${minor ? fmt(price) + ' · 家里出' : fmt(price)}${why}`, dis:() => S.ap <= 0 || pets().length >= 4 || (!minor && S.money < price) || (P.yard && !hasYard()) || (S.flags.blacklist && price >= 10000), f:() => {
@@ -4802,12 +4829,12 @@ function petShop(){
   cs.unshift({l:'去救助站领养一只', d:'不花钱', dis:() => S.ap <= 0 || pets().length >= 4, f:() => {
     spend();
     if (S.age < 18 && tier() <= 1 && chance(.35)){ L('你抱回来一只流浪猫，爸妈让你从哪捡的放回哪去。', 'b', {happy:-4}); return; }
-    const i = pick([0, 0, 0, 9, 9, 6, 15]), p = getPet(i, 'adopt');
+    const i = pick([0, 0, 9, 6, 15, ...PETS.map((P, k) => P.stray && !P.wild ? k : -1).filter(k => k >= 0)]), p = getPet(i, 'adopt');
     L(`你在流浪动物救助站领养了一只${PETS[i].n}，给它取名“${p.n}”。`, 'g', {happy:R(6, 10)});
     petPhoto(p, '领养', pick([`它在笼子里看了你一眼，你就走不动道了。`, `工作人员说它被人丢过两次。你把它抱起来的时候，它一直在发抖。`]));
   }});
   cs.push({l:'算了', d:'不消耗行动', f:() => {}});
-  modal('养宠物', `${pets().length ? `你现在养着${pets().map(p => p.n).join('、')}。` : ''}养宠物每年都要花钱，生病了还得去看。最多同时养四只。`, cs, '宠物', `<div class="shelf">${PETS.map((P, i) => photoCard('pet', i, 31 + i, P.n, fmt(P.p))).join('')}</div>`, {wide:true});
+  modal('养宠物', `${pets().length ? `你现在养着${pets().map(p => p.n).join('、')}。` : ''}养宠物每年都要花钱，生病了还得去看。最多同时养四只。`, cs, '宠物', `<div class="shelf">${PETS.map((P, i) => P.stray ? '' : photoCard('pet', i, 31 + i, P.n, fmt(P.p))).join('')}</div>`, {wide:true});
 }
 function petGone(p, why, kind = 'b'){
   const ps = pets(); if (!ps.includes(p)) return;
@@ -5324,6 +5351,296 @@ function flopCheck(a, cat, before){
   }
   return false;
 }
+
+/* ---------- 路上遇到的流浪动物：要不要带回家，每次结果都不一样 ---------- */
+const STRAYS = [
+  {t:'下雨天，楼道里一只湿透的小猫冲你一直叫。', sp:['狸花猫','三花猫','橘猫','奶牛猫'], weak:1},
+  {t:'一只瘸着腿的老黄狗，跟着你走了三条街。', sp:['瘸腿的老黄狗']},
+  {t:'小区垃圾桶边的纸箱里，有人丢了一窝小奶猫，只剩一只还在叫。', sp:['三花猫','狸花猫','奶牛猫'], weak:1},
+  {t:'菜市场门口的小黑狗，每天都蹲在那里等你经过。', sp:['小黑狗']},
+  {t:'你发动车子的时候，听见引擎盖里传来小猫的叫声。', sp:['橘猫','狸花猫','黑猫'], c:() => S.assets.cars.length > 0},
+  {t:'一只黑猫在你家门口坐了整整三天，赶都赶不走。', sp:['黑猫']},
+  {t:'工地边上一只瘦得皮包骨的狗在翻垃圾，看见你就摇尾巴。', sp:['中华田园犬','小黑狗'], weak:1},
+  {t:'夜里你听见院子里窸窸窣窣，打开灯一看，是一只小刺猬。', sp:['小刺猬']},
+  {t:'过年回老家，奶奶说村口那只三花猫是没人要的，问你要不要带走。', sp:['三花猫'], c:() => S.age >= 8},
+  {t:'高速服务区里，一只戴着项圈的金毛在停车场里来回转，像是被人丢下了。', sp:['金毛'], owner:1, c:() => S.age >= 18},
+  {t:'一只灰鹦鹉落在你的阳台栏杆上，冲你喊了一句“你好”。', sp:['非洲灰鹦鹉'], owner:1},
+  {t:'楼下的老人去世了，他养的那只老猫整天坐在门口不肯走。', sp:['橘猫','英短蓝猫','黑猫']},
+  {t:'你在路上看见一只被车撞伤的小狗，躺在路边呜呜地叫。', sp:['中华田园犬','小黑狗'], weak:1, hurt:1},
+  {t:'一只奶牛猫天天来蹭你的饭，吃完就躺在你脚边晒太阳。', sp:['奶牛猫']},
+  {t:'学校门口一只小狗，放学时总跟着学生们跑。', sp:['小黑狗','中华田园犬'], c:() => S.age >= 6 && S.age <= 22},
+  {t:'一只流浪狗每天晚上都挨着你睡，帮你挡着风。', sp:['中华田园犬','小黑狗','瘸腿的老黄狗'], c:() => S.flags.homeless},
+];
+const spIdx = n => PETS.findIndex(P => P.n === n);
+function strayKeep(x, i, seed, how){
+  if (pets().length >= 4){ L('家里已经养不下了，你只好把它托付给了一个朋友。', 'n', {happy:2}); return null; }
+  const p = getPet(i, 'adopt'); p.s = seed; p.v = Math.min(p.v, 300);
+  if (x.weak) p.die = Math.max(p.age + 1, p.die - R(0, 3));
+  return p;
+}
+function strayTake(x, i, seed){
+  if (S.age < 18 && !S.flags.homeless){
+    if (!parentsAlive() && !S.flags.adopted){ L('你想收留它，可你自己都寄人篱下。', 'n', {happy:-2}); return; }
+    if (chance(tier() <= 1 ? .45 : .25)){ L(pick(['爸妈让你从哪捡的放回哪去。', '妈妈说家里已经够乱了，你抱着它哭了一路，最后还是放了回去。', '爸爸说你连作业都写不完，还想养活一条命？', '你偷偷把它藏在床底下，第二天就被发现了，只能送走。']), 'b', {happy:-5}); return; }
+  }
+  const p = strayKeep(x, i, seed); if (!p) return;
+  const r = Math.random();
+  if (r < (x.hurt ? .3 : x.weak ? .2 : .1)){
+    const c = R(10, 80) * 100;
+    if (chance(.35)){ L(`你把它带去宠物医院，花了 ${fmt(c)}，医生还是没能救回来。你给它取过名字，叫“${p.n}”。`, 'b', {money:S.age >= 18 ? -c : 0, happy:-6}); petGone(p, '去世'); return; }
+    L(`它病得很重，你花了 ${fmt(c)} 才把它从鬼门关拉回来，给它取名“${p.n}”。`, 'g', {money:S.age >= 18 ? -c : 0, happy:6});
+  } else if (r < .2){ L(`你想抱它，被它狠狠抓了一道，只好去打了狂犬疫苗。不过它还是跟你回了家，你叫它“${p.n}”。`, 'n', {money:S.age >= 18 ? -R(5, 15) * 100 : 0, health:-1, happy:3}); }
+  else if (r < .27 && x.owner){ const w = R(1, 8) * 5000; petGone(p, '送还'); L(`养了没几天，它的主人看到寻宠启事找上门来，抱着它哭了，硬塞给你 ${fmt(w)} 表示感谢。`, 'g', {money:w, happy:5}); return; }
+  else if (r < .33){ petGone(p, '走丢'); L(`你给它取名“${p.n}”，可才过了一个星期，它就从窗户溜走，再也没回来。`, 'b', {happy:-5}); return; }
+  else L(pick([`你把它抱回了家，给它取名“${p.n}”。它吃完一大碗饭，就在你脚边睡着了。`, `${p.n}到家后躲了三天，第四天终于肯让你摸了。`, `你给它洗了个澡，才发现它原来是这个颜色的。你叫它“${p.n}”。`, `你给它取名“${p.n}”。它好像知道自己有家了，一整晚都在你身边转。`, `你叫它“${p.n}”。邻居说这只${PETS[i].n}在外面流浪好几年了，从来没让人碰过。`, `${p.n}来的第一天就打翻了你的水杯，然后若无其事地舔起了爪子。`, `你带${p.n}去打了疫苗、驱了虫，医生说它很健康。`, `${p.n}一进门就跳上了沙发，好像它本来就住在这里。`, `你给${p.n}买了个窝，它不睡，非要睡在你的旧衣服上。`, `${p.n}到家后吃得太急，吐了一地。你收拾的时候，它一直在旁边小心地看着你。`]), 'g', {happy:R(5, 9)});
+  petPhoto(p, '捡回来的家人', pick(['它来的那天，你觉得家里多了点声音。', '从此以后，它就是你的了。', '你给它拍了第一张照片。']));
+}
+function strayFeed(x, i, seed){
+  const r = Math.random(), c = S.age >= 18 ? -R(2, 10) * 10 : 0;
+  if (r < .3 && pets().length < 4 && !(S.age < 18 && tier() <= 1)){ const p = strayKeep(x, i, seed); if (!p) return; L(pick([`你喂了它一根火腿肠，它就一路跟着你回了家。你叫它“${p.n}”。`, `你喂完转身走，它一直跟到了你家门口。你没忍心关门，给它取名“${p.n}”。`, `第二天你又来喂它，第三天它就住进了你家。你叫它“${p.n}”。`]), 'g', {money:c, happy:R(5, 8)}); petPhoto(p, '跟你回家了', '它好像早就决定好了。'); return; }
+  if (r < .55) L(pick(['从那以后，你每天都给它带点吃的，它一看见你就跑过来。', '它成了这条街的“编外居民”，大家都在喂它。', '你给它在楼下搭了个纸箱窝，冬天又铺了件旧棉衣。']), 'g', {money:c, happy:R(2, 5)});
+  else if (r < .7) L(pick(['第二天你再去，它已经不见了。', '你带着吃的去找它，找了一圈都没找到。', '后来你再也没见过它，不知道它去了哪里。']), 'n', {money:c, happy:-2});
+  else if (r < .82) L(pick(['物业说有人投诉你喂流浪动物，让你别再喂了。', '邻居说你喂的流浪猫半夜叫春，吵得人睡不着，跟你吵了一架。']), 'b', {money:c, stress:4, happy:-2});
+  else if (r < .94) L(pick(['过了几天，你看到一个小姑娘把它抱回了家。', '后来有一家人收养了它，你偶尔还能在小区里看见它。']), 'g', {money:c, happy:3});
+  else L('你喂它的时候被它咬了一口，去打了狂犬疫苗。', 'b', {money:c + (S.age >= 18 ? -R(5, 15) * 100 : 0), health:-1});
+}
+function strayShelter(x, i, seed){
+  const r = Math.random();
+  if (r < .5) L(pick(['你把它送去了救助站。一个月后，救助站发来照片：它被一户人家领养了。', '救助站给它治好了病，后来它被一对老夫妻领走了。', '你把它送到救助站，工作人员说它很亲人，很快就会有人要。']), 'g', {happy:R(3, 5)});
+  else if (r < .7){ const d = S.age >= 18 ? R(2, 10) * 100 : 0; L(`救助站已经满了，你捐了 ${fmt(d)} 才让他们收下了它。`, 'n', {money:-d, happy:2}); }
+  else if (r < .85) L('你从那以后常去救助站当志愿者，看着它一天天胖起来。', 'g', {happy:4, stress:-2});
+  else L(pick(['救助站后来打电话说，它没能熬过那个冬天。', '你再去救助站看它的时候，它已经不在了。']), 'b', {happy:-5});
+}
+function strayOwner(x, i, seed){
+  const r = Math.random();
+  if (r < .55){ const w = x.sp[0] === '金毛' ? R(1, 5) * 10000 : R(2, 20) * 500; L(pick([`你照着项圈上的电话打过去，主人连夜开车来接它，非要塞给你 ${fmt(w)}。`, `你在网上发了寻主启事，第二天主人就找来了，送了你一面锦旗和 ${fmt(w)}。`, `原来它是附近一户人家走丢的，主人请你吃了顿饭，还给了你 ${fmt(w)} 的红包。`]), 'g', {money:S.age >= 18 ? w : 0, happy:5}); }
+  else if (r < .8){ const p = strayKeep(x, i, seed); if (p){ L(`你找了一个月，没人来认领，它就成了你的。你叫它“${p.n}”。`, 'g', {happy:6}); petPhoto(p, '没人来认领', '那就跟我回家吧。'); } }
+  else { const p = strayKeep(x, i, seed); if (p) L(`你联系上了主人，对方说：“不要了，你看着处理吧。”你气得挂了电话，把它留了下来，取名“${p.n}”。`, 'n', {happy:2, stress:2}); }
+}
+function strayLeave(x, i, seed){
+  const r = Math.random();
+  if (r < .35) L(pick(['你走出去很远，回头看它还坐在原地。那天晚上你一直睡不着。', '你狠狠心走开了，可一整天都在想它。', '你摸了摸它的头，说了声“对不起”。']), 'n', {happy:-R(2, 4)});
+  else if (r < .6) L(pick(['第二天你路过，它已经被人领走了。你松了口气。', '后来听说有人收留了它，你心里的石头落了地。']), 'n', {happy:1});
+  else if (r < .8 && pets().length < 4 && !(S.age < 18 && tier() <= 1)){ const p = strayKeep(x, i, seed); if (p){ L(`半夜你还是折了回去，它还在那里等你。你把它抱回了家，取名“${p.n}”。`, 'g', {happy:6}); petPhoto(p, '还是回去了', '你就知道自己放不下。'); } }
+  else L(pick(['几天后，你在路边看见了它，它被车撞死了。你站了很久。', '那年冬天特别冷，后来你再也没见过它。']), 'b', {happy:-6, stress:3});
+}
+function strayMeet(){
+  const opts = STRAYS.filter(x => !x.c || x.c()), x = pick(opts);
+  const i = spIdx(pick(x.sp)), seed = R(1, 1e9);
+  if (i < 0) return;
+  modal('路上遇到', x.t, [
+    {l:pick(['把它带回家', '抱回家养', '收留它']), f:() => strayTake(x, i, seed)},
+    {l:pick(['给它买点吃的', '喂它一点东西', '去买根火腿肠给它']), f:() => strayFeed(x, i, seed)},
+    x.owner ? {l:'想办法找到主人', f:() => strayOwner(x, i, seed)} : {l:'送去流浪动物救助站', f:() => strayShelter(x, i, seed)},
+    {l:pick(['假装没看见', '狠狠心走开', '摸摸它，然后走了']), f:() => strayLeave(x, i, seed)},
+  ], '偶遇', photoCard('pet', i, seed, PETS[i].n, '', '', true));
+}
+
+/* 受伤的猫头鹰：国家保护动物，不能自己养 */
+function owlMeet(){
+  modal('受伤的猫头鹰', pick(['一只翅膀受伤的猫头鹰掉在了你家阳台上，瞪着两只大眼睛看你。', '你在路边草丛里发现一只受伤的猫头鹰，它扑腾了两下，飞不起来。']), [
+    {l:'打电话交给林业部门', f:() => { const r = Math.random(); if (r < .6) L(pick(['工作人员说这是国家二级保护动物，谢谢你。一个月后，他们发来了它被放归山林的视频。', '林业站的人把它接走了，还送了你一张“野生动物保护志愿者”的证书。']), 'g', {happy:R(4, 7)}); else if (r < .85) L('工作人员来了，说它伤得太重，可能救不活了。你有点难过。', 'n', {happy:-2}); else L('你打了一圈电话，没人管。最后还是一个鸟类救助的志愿者把它接走了。', 'n', {happy:2, stress:2}); }},
+    {l:'自己照顾好再放走', f:() => { const r = Math.random(); if (r < .5) L('你每天喂它生肉，一个月后它能飞了。你打开窗户，它在你家上空绕了一圈才离开。', 'e', {happy:8, money:S.age >= 18 ? -R(3, 10) * 100 : 0}); else if (r < .75) L('你尽力了，可它还是没熬过去。你把它埋在了树下。', 'b', {happy:-5}); else { const c = R(2, 10) * 1000; L(`邻居拍了视频举报，森林公安上门把它带走了，说私自救治保护动物也不行，罚了你 ${fmt(c)}。`, 'b', {money:S.age >= 18 ? -c : 0, happy:-4, stress:5}); } }},
+    {l:'偷偷留着养', f:() => { if (chance(.45)){ if (S.age >= 18 && chance(.2)) goJail(1, '你非法饲养国家保护动物的事被人举报了，被判了刑。'); else { const c = R(5, 30) * 1000; L(`你偷偷养猫头鹰的事被人举报了，森林公安把它带走了，还罚了你 ${fmt(c)}。`, 'b', {money:S.age >= 18 ? -c : 0, stress:8, happy:-5}); } } else L('你偷偷养了它半年，有天夜里它从窗口飞走了，再也没回来。', 'n', {happy:2, stress:3}); }},
+  ], '偶遇');
+}
+
+/* 和动物的各种小偶遇 */
+const ANIMAL_MEET = [
+  [() => true, () => L('你在路上被一只野狗追着咬了一口，跑去打了五针狂犬疫苗。', 'b', {health:-3, money:S.age >= 18 ? -R(5, 20) * 100 : 0, stress:3})],
+  [() => true, () => L('你在乡下被一只大白鹅追了半条街，大家笑了你一整年。', 'n', {happy:2})],
+  [() => true, () => L('公园里一只松鼠从你手心里叼走了一颗花生，又跑回来拿了第二颗。', 'g', {happy:3})],
+  [() => S.assets.cars.length > 0, () => L('一只猫在你的车顶上睡了一下午，留下了一排梅花脚印。', 'n', {happy:2})],
+  [() => true, () => L('你在马路中间救起一只翻了个的乌龟，把它放回了池塘。', 'g', {happy:3})],
+  [() => true, () => L('你被蜜蜂蛰了一下，半张脸肿得像个馒头。', 'b', {health:-2, looks:-1, happy:-2})],
+  [() => true, () => L('一只蝴蝶落在你肩膀上停了好久，你一动都不敢动。', 'g', {happy:3, stress:-3})],
+  [() => true, () => L('夜里一只蝙蝠飞进了你家，你拿着扫把追了半个小时。', 'n', {stress:3, happy:1})],
+  [() => S.photos.length > 0, () => L('你在景区被猴子抢走了手机，它爬上树玩了半天才扔下来。', 'n', {happy:1, stress:2})],
+  [() => S.photos.length > 0, () => L('你在海边被一只海鸥抢走了手里的薯条。', 'n', {happy:1})],
+  [() => true, () => L('你在草丛边差点踩到一条蛇，吓得一晚上没睡好。', 'b', {stress:5})],
+  [() => true, () => L('一只流浪猫在你家门口生了一窝小猫，你给它们搭了个窝，整栋楼的人都来帮忙。', 'g', {happy:5})],
+  [() => true, () => L('你家楼下的燕子窝里孵出了一窝小燕子，你每天都去看它们张嘴等吃的。', 'g', {happy:3})],
+  [() => pets().length > 0, () => { const p = pick(pets()); L(`${p.n}在楼下和别人家的狗打了起来，你赔着笑道了半天歉。`, 'n', {happy:-1, stress:2}); }],
+  [() => S.age < 15, () => L('你在路边捡了一只受伤的麻雀，用鞋盒养了一个星期，它飞走的那天你哭了。', 'g', {happy:4})],
+  [() => S.age >= 18, () => L('你去动物园看熊猫，排了两个小时队，它全程背对着你吃竹子。', 'n', {happy:2})],
+];
+EV.push(
+  {id:'stray', a:[6,92], w:.9, any:1, c:() => !S.jail && pets().length < 4, r:strayMeet},
+  {id:'stray2', a:[18,85], w:.4, c:() => pets().length < 4, r:strayMeet},
+  {id:'owl', a:[10,85], w:.25, c:() => !S.jail && !S.flags.homeless, r:owlMeet},
+  {id:'animal', a:[3,95], w:.8, any:1, c:() => !S.jail, r:() => pick(ANIMAL_MEET.filter(([c]) => c()))[1]()},
+  {id:'animal2', a:[3,95], w:.5, c:() => !S.jail, r:() => pick(ANIMAL_MEET.filter(([c]) => c()))[1]()},
+);
+
+/* ---------- 每个行动都有十几种结果：好的、平淡的、坏的、少见的
+   格式：种类|权重|文字|效果|条件
+   种类 g 好 n 平 b 坏 z 白忙（数值不涨） e 少见的好事
+   效果 smarts:G1-4 表示按努力程度涨（可能偷懒涨不了）；happy:2~5 是范围；cost 花钱（小时候家里出）；earn 赚钱；@xxx 是附带的事 ---------- */
+const VARY = {
+  咿呀学语:['g|3|你咿咿呀呀地跟着大人学说话。|smarts:G1-3', 'g|2|你认出了妈妈手里的苹果，伸手去抓。|smarts:G1-3', 'g|2|你第一次清楚地喊出了“爸爸”，全家都激动坏了。|smarts:G1-3,happy:2', 'g|2|你指着窗外的鸟，嘴里“啊啊”地叫个不停。|smarts:G1-3', 'g|1|你学会了摇头说“不”，从此天天说“不”。|smarts:G1-3,happy:1', 'g|1|奶奶教你念儿歌，你跟着哼出了调子。|smarts:G1-3', 'z|2|你对着天花板发了一整天呆。|', 'z|1|大人教了你一百遍，你只会流口水。|', 'z|1|你把学说话的时间都用来啃自己的脚了。|', 'b|1|你学说话的时候咬到了舌头，哭了一下午。|happy:-2', 'e|1|你一岁多就能背好几首唐诗，邻居都说你是神童。|smarts:G3-6,happy:2'],
+  呼呼大睡:['g|3|你吃饱了就睡，长得白白胖胖。|health:G1-3,stress:-3', 'g|2|你一觉睡到天亮，醒来咯咯直笑。|health:G1-3,stress:-3,happy:1', 'g|1|你抱着小被子睡得香甜，口水流了一枕头。|health:G1-3,stress:-3', 'g|1|午觉睡足了，你精神得满屋子跑。|health:G1-3,happy:2', 'z|2|你半夜总是哭闹，全家都没睡好。|stress:1', 'z|1|你睡一会儿醒一会儿，大人抱着你在屋里转了一夜。|', 'b|1|你睡觉踢被子着了凉，流了好几天鼻涕。|health:-2', 'b|1|你做了噩梦，哭着醒来，好久都不敢再睡。|stress:2,happy:-2', 'n|1|你睡着睡着从床这头转到了床那头。|stress:-2', 'e|1|你一觉睡了十四个小时，醒来好像又长高了一点。|health:G2-4,stress:-4'],
+  到处乱爬:['g|3|你满屋子乱爬，把奶奶累坏了。|health:G1-3,happy:2', 'g|2|你爬到茶几底下，找到了一颗丢了好久的纽扣。|health:G1-3,happy:2', 'g|1|你扶着沙发站了起来，晃了两下又坐下了。|health:G1-3,happy:3', 'g|1|你追着家里的猫爬了一下午。|health:G1-3,happy:3', 'z|2|你爬了两步就趴着不动了。|', 'z|1|你一直在原地打转，就是不往前爬。|', 'b|2|你从床上滚了下来，额头磕了个大包。|health:-2,happy:-2', 'b|1|你把手伸向插座，被大人一把拽开，吓得大哭。|happy:-2,stress:2', 'b|1|你趁大人不注意，把一颗纽扣塞进了嘴里，被倒提着拍了出来。|health:-2', 'e|1|你迈出了人生的第一步，全家都在鼓掌。|health:G2-4,happy:5'],
+  撒娇:['g|3|你伸手要抱抱，爸爸把你举过了头顶。|happy:1~4', 'g|2|你一哭，妈妈就把你搂进怀里。|happy:1~4', 'g|1|你搂着奶奶的脖子不撒手，奶奶笑得合不拢嘴。|happy:2~4', 'g|1|你撒娇要了一颗糖，含在嘴里舍不得咬。|happy:2~4', 'g|1|你钻进爸妈的被窝，挤在中间睡了一晚。|happy:2~4,stress:-2', 'n|1|你撒了半天娇，大人在忙，没顾上理你。|happy:-1', 'n|1|你撒娇要买玩具，爸妈说“下次吧”。|', 'b|1|你撒泼打滚要东西，被打了屁股。|happy:-3', 'b|1|你撒娇过了头，亲戚说“这孩子惯坏了”。|happy:-1,stress:1', 'e|1|你奶声奶气地说了句“我爱你”，妈妈当场就哭了。|happy:5'],
+  看绘本:['g|3|你把一本恐龙绘本翻得稀烂。|smarts:G1-3', 'g|2|你缠着大人讲了十遍同一个故事。|smarts:G1-3', 'g|1|你能认出绘本上二十多种动物了。|smarts:G1-3', 'g|1|你自己编了个故事讲给布娃娃听。|smarts:G1-3,happy:2', 'g|1|你学会了数到一百。|smarts:G1-3', 'z|2|你翻了两页就开始撕书。|', 'z|1|你只看图，从来不听大人讲字。|', 'b|1|你被书页划破了手指，哭了半天。|happy:-2', 'n|1|你把绘本当枕头，抱着睡着了。|stress:-2', 'e|1|你三岁就认得几百个字，幼儿园老师很惊讶。|smarts:G3-6'],
+  在外面疯玩:['g|3|你在沙坑里玩了一下午。|happy:2~5,health:0~2,stress:-3', 'g|2|你追着小区的猫跑了一整天。|happy:2~5,health:0~2,stress:-3', 'g|2|你和小伙伴们玩捉迷藏，玩到天黑。|happy:2~5,health:0~2,stress:-3', 'g|1|你在河边抓了一瓶小蝌蚪。|happy:3~5,stress:-3', 'g|1|你学会了骑自行车，后面没人扶也不怕了。|happy:3~6,health:1~2', 'g|1|你爬上了小区最高的那棵树，又不敢下来了。|happy:2~4', 'n|1|外面下雨，你只能趴在窗户边看。|happy:-1', 'b|2|你跑太快摔了一跤，膝盖磕破了。|health:-2', 'b|1|你被一只大狗追得哇哇哭。|happy:-3,stress:3', 'b|1|你玩得太疯，衣服全是泥，回家被骂了一顿。|happy:-2', 'e|1|你在草丛里捡到一只受伤的小鸟，养好后放它飞走了。|happy:6'],
+  看动画片:['g|3|你看了一整天动画片。|happy:1~4,stress:-2', 'g|1|你学着动画片里的英雄，披着床单在家里飞来飞去。|happy:2~4', 'g|1|你把最喜欢的那集看了二十遍，台词都能背了。|happy:2~4', 'g|1|你看动画片学会了几句英语。|happy:1~3,smarts:0~1', 'n|1|你抢遥控器没抢过表哥，只能看他喜欢的。|happy:-1', 'n|1|你看着看着睡着了，醒来已经演完了。|stress:-2', 'b|1|你看电视凑得太近，眼睛开始近视了。|health:-1', 'b|1|你偷偷看动画片被发现，遥控器被藏了起来。|happy:-2', 'b|1|你看了一集吓人的，晚上不敢一个人睡。|stress:3', 'e|1|你照着动画片画了一张画，被贴在了幼儿园墙上。|happy:5'],
+  认真学习:['g|3|你认真完成作业，还多读了几本课外书。|smarts:G1-4,stress:1~3', 'g|2|你上课举手回答问题，老师表扬了你。|smarts:G1-4,stress:1~3,happy:1', 'g|1|你把乘法口诀背得滚瓜烂熟。|smarts:G1-4,stress:1~3', 'g|1|你的作文被老师当成范文念了。|smarts:G1-4,happy:3', 'g|1|你期末考了全班前三。|smarts:G1-4,happy:2,stress:2', 'z|2|你坐在书桌前，作业一个字都没写。|stress:1', 'z|1|你边写作业边玩橡皮，一晚上就过去了。|', 'b|1|你考试粗心，算错了一道最简单的题，被骂了一顿。|happy:-3,stress:3', 'b|1|你学到很晚，第二天上课打瞌睡被罚站。|happy:-2,stress:2', 'n|1|你很努力，成绩却和以前差不多。|stress:2', 'e|1|你在全市小学生竞赛里拿了一等奖。|smarts:G3-6,happy:6'],
+  课外补习:['g|3|你上了一年补习班，成绩提了一大截。|smarts:G2-6,stress:5~9,happy:-2,cost:4000~12000', 'g|2|一对一家教帮你补上了短板。|smarts:G2-6,stress:5~9,cost:6000~15000', 'g|1|补习老师讲得比学校清楚多了。|smarts:G2-6,stress:4~8,cost:4000~12000', 'g|1|你在补习班交到了一个学霸朋友，跟着他一起刷题。|smarts:G2-6,happy:2,stress:4~7,cost:4000~12000', 'z|2|补习班花了不少钱，成绩没什么起色。|stress:5~8,cost:4000~12000', 'z|1|你在补习班后排睡了一个学期。|cost:4000~12000', 'b|1|补习班老板卷钱跑路了，学费一分没退。|happy:-3,stress:3,cost:5000~10000', 'b|1|周末全被补习占满了，你累得生了一场病。|health:-3,stress:6~9,cost:4000~12000', 'n|1|你每天在学校和补习班之间连轴转，没有一点自己的时间。|smarts:0~2,stress:7~10,happy:-3,cost:4000~12000', 'e|1|补习老师说你有天赋，推荐你去参加竞赛集训。|smarts:G4-8,happy:4,stress:6,cost:4000~12000'],
+  刷题:['g|3|你刷完了一整本习题集。|smarts:G2-5,stress:6~10,health:-1|calm', 'g|2|你每天学到凌晨一点。|smarts:G2-5,stress:6~10,health:-2|calm', 'g|2|你把错题本整理了三遍。|smarts:G2-5,stress:5~8|calm', 'g|1|你终于弄懂了一直不会的那类题，开心得在床上打滚。|smarts:G2-5,happy:3,stress:4|calm', 'z|2|你买了五本习题集，只做了第一页。|stress:2|calm', 'z|1|你刷了一年题，模拟考的分数纹丝不动。|stress:5~8|calm', 'b|1|你刷题刷到眼睛发红，视力又降了一百度。|health:-2,stress:6|calm', 'b|1|你熬夜刷题，第二天考试睡过了头。|stress:8,happy:-4|calm', 'n|1|你和同桌比赛刷题，谁也不让谁。|smarts:0~2,stress:7|calm', 'e|1|你在一次联考里冲进了全市前五十。|smarts:G3-6,happy:6,stress:4|calm', 'b|3|你对着习题集坐了一晚上，脑子里一片空白。压力太大，学不进去了。|stress:4,happy:-3|frazzled', 'b|1|你一翻开习题集就开始心慌，手都在抖。|stress:5,happy:-3|frazzled', 'b|1|你把习题集撕了，趴在桌上哭了很久。|stress:3,happy:-4|frazzled'],
+  运动:['g|3|你每天放学去操场跑步。|health:G1-4,stress:-3,happy:1', 'g|2|你加入了学校篮球队。|health:G1-4,stress:-3,happy:2', 'g|1|你学会了游泳，暑假天天泡在泳池里。|health:G1-4,happy:2', 'g|1|你在校运会上跑了第一名。|health:G1-4,happy:5', 'g|1|你每天跳绳一千下，体测拿了满分。|health:G1-4,happy:2', 'z|2|你跑了两圈就喘得不行，回家了。|', 'z|1|你说要锻炼，其实一直坐在操场边看别人打球。|', 'b|1|你打球时被撞倒，手腕扭了。|health:-3,happy:-2', 'b|1|你踢球把邻居家的玻璃踢碎了，赔了钱还挨了骂。|happy:-3,cost:300~800', 'n|1|你踢了一年球，个子没长，球技倒是长了。|happy:2', 'e|1|体校的教练看中了你，说你是块好料子。|health:G3-6,happy:6'],
+  交朋友:['g|3|你交到了一个可以说心里话的好朋友。|happy:3~6', 'g|2|你和同桌成了形影不离的死党。|happy:3~6', 'g|1|你们几个人组了个小团体，还起了个名字。|happy:3~6,stress:-2', 'g|1|你和转学来的新同学成了好朋友。|happy:3~5', 'g|1|你把零食分给大家，一下子人缘变好了。|happy:2~4,cost:50~200', 'n|1|你想加入别人的圈子，可总是插不上话。|happy:-2', 'n|1|你的好朋友转学走了，你们约好了写信。|happy:-2', 'b|2|你被好朋友背叛了，TA把你的秘密告诉了全班。|happy:-6,stress:5', 'b|1|你被几个同学孤立了，课间只能一个人待着。|happy:-6,stress:6', 'b|1|你为了朋友跟人打了一架，被请了家长。|happy:-2,stress:4,health:-1', 'e|1|你遇到了一个一辈子的朋友，后来你们做了几十年的知己。|happy:8'],
+  打游戏:['g|3|你打了一晚上游戏，连赢十把。|happy:2~5,stress:-8~-4,smarts:-1~0', 'g|2|你在游戏里交到了一群网友。|happy:2~5,stress:-8~-4', 'g|1|你终于通关了那款很难的游戏，激动得拍了桌子。|happy:4~7,stress:-6~-3', 'g|1|你抽卡抽到了最稀有的角色。|happy:4~6', 'n|2|你通宵打游戏，第二天顶着两个黑眼圈。|happy:1~3,stress:-4,health:-1', 'n|1|你玩了一晚上，全在排队和掉线。|happy:-1', 'b|1|你连输十把，气得把手柄摔了。|happy:-4,stress:4', 'b|1|你在游戏里充了不少钱，回头一看账单傻了眼。|happy:-3,cost:500~3000', 'b|1|你打游戏太久，脖子开始疼了。|health:-2', 'e|1|你在比赛里打进了全国前一百，有战队来找你。|happy:8,stress:-3'],
+  调皮捣蛋:['g|2|你在教室里放了一只青蛙，全班笑翻了。|happy:5', 'g|1|你在老师的椅子上放了个放屁垫。|happy:4', 'g|1|你带着一帮小孩去偷摘邻居家的桃子，吃得满嘴是汁。|happy:5', 'g|1|你给班主任画了张漫画，被全班传着看。|happy:4', 'b|2|你把同学的作业本扔进了池塘，被请了家长。|happy:-4', 'b|1|你偷偷按了邻居家的门铃，被抓了个正着。|happy:-4', 'b|1|你玩火柴把窗帘点着了，被狠狠揍了一顿。|happy:-5,health:-1,stress:3', 'b|1|你爬墙头摔了下来，胳膊肿了好几天。|health:-3', 'n|1|你的恶作剧没人理，觉得很没意思。|', 'n|1|你捣蛋被老师罚抄课文二十遍。|happy:-2,smarts:0~1', 'e|1|你钻进一个废弃的院子，发现了一窝小猫，从此天天去喂。|happy:6'],
+  帮家里干活:['n|3|你帮爸妈喂猪、做饭、带弟妹。|health:0~2,happy:-1,stress:2', 'n|2|你放学后去菜市场帮家里卖菜。|health:0~2,happy:-1,stress:2', 'n|1|你天不亮就跟着下地，一直干到太阳落山。|health:1~2,stress:3,happy:-2', 'g|1|你学会了自己做饭，全家都夸你炒的菜好吃。|happy:3', 'g|1|你帮家里卖了一个暑假的西瓜，爸妈给了你一点零花钱。|happy:3', 'b|1|你干活时被镰刀划了一道口子，留了疤。|health:-3', 'b|1|你干活太累，作业没写完，被老师批评了。|stress:3,happy:-2', 'n|1|你一边看店一边写作业，字写得歪歪扭扭。|stress:2', 'g|1|爸妈摸着你的头说：“你长大了。”|happy:4', 'e|1|你帮家里出了个主意，那一年的收成卖了个好价钱。|happy:6,smarts:0~2'],
+  逃课出去玩:['g|3|你翘课出去玩了一天，自由的感觉真好。|happy:3~6,stress:-6,smarts:-1', 'g|1|你逃课去看了一场电影，整个影厅就你一个人。|happy:3~5,stress:-5', 'g|1|你逃课去江边坐了一下午，想了很多事。|stress:-7,happy:2', 'g|1|你逃课去网吧，打得昏天黑地。|happy:4,stress:-5,smarts:-1', 'n|1|你逃了课却不知道去哪，在街上晃了一天。|smarts:-1', 'b|2|你逃课去网吧，被班主任逮住，叫了家长。|happy:-5,stress:6|minor', 'b|1|你逃课时被路过的亲戚看见，转头就告诉了你爸妈。|happy:-4,stress:5|minor', 'b|2|你逃了一节课，结果那天点名了，挂了科。|happy:-5,stress:6|adult', 'b|1|你逃课错过了期末重点，考试一塌糊涂。|smarts:-2,stress:6', 'b|1|你逃课去游戏厅，钱包被人偷了。|happy:-3,cost:100~500', 'e|1|你逃课去听了一场讲座，从此找到了自己想做的事。|happy:6,smarts:G2-4'],
+  打零工:['n|3|你暑假在奶茶店打工。|earn:1000~3000,health:-1', 'n|2|你去发了一个月传单。|earn:1000~2500,health:-1', 'n|1|你在亲戚的饭店端了一个暑假的盘子。|earn:1500~3000,health:-1', 'n|1|你帮人搬家，一天能挣两百。|earn:1000~2500,health:-2', 'g|1|你在快餐店打工被店长夸，还多发了奖金。|earn:2000~4000,happy:3', 'b|1|老板拖着不发工钱，你一分钱也没拿到。|happy:-4,stress:4', 'b|1|你搬货时砸到了脚，赚的钱全花在了医药费上。|health:-3,earn:200~500', 'n|1|你打了个工，才知道爸妈挣钱有多难。|earn:1000~2000,happy:-1', 'g|1|你在书店打工，不忙的时候就坐在角落看书。|earn:1000~2000,smarts:0~1,happy:2', 'e|1|你在网上卖自己画的头像，居然赚了不少。|earn:4000~9000,happy:5'],
+  泡图书馆:['g|3|你在图书馆泡了一整个学期。|smarts:G2-5,stress:3~6', 'g|2|你读完了一整套专业书。|smarts:G2-5,stress:3~6', 'g|1|你在图书馆最里面找到一个没人的座位，一坐就是一天。|smarts:G2-5,stress:2~4', 'g|1|你写的读书笔记被导师拿去给学弟学妹看。|smarts:G2-5,happy:3', 'z|2|你去图书馆占了座，然后睡了一下午。|', 'z|1|你在图书馆刷了一下午手机。|', 'n|1|图书馆里总坐你对面的那个人，你一直没敢搭话。|happy:1|single', 'b|1|图书馆冷气太足，你感冒了一个星期。|health:-2', 'b|1|你的笔记本电脑在图书馆被偷了。|happy:-4,cost:3000~6000', 'e|1|你在旧书堆里翻到一本绝版书，读完后茅塞顿开。|smarts:G4-7,happy:3'],
+  兼职打工:['n|3|你在快餐店打了一个学期的工。|earn:5000~12000,stress:3,health:-1', 'n|2|你做了一年家教。|earn:8000~15000,stress:3', 'n|1|你在网上接了些设计私活。|earn:5000~15000,stress:3', 'n|1|你在商场当促销员，站得腿都肿了。|earn:4000~8000,health:-2', 'g|1|你做家教的那户人家很喜欢你，过年还给你包了红包。|earn:8000~15000,happy:3', 'g|1|你在一家公司实习，表现好被提前预定了工作。|earn:6000~10000,happy:5', 'b|1|你被黑中介骗了押金，活也没干成。|happy:-4,cost:500~2000', 'b|1|你打工太多，挂了两门课。|earn:5000~10000,stress:6,smarts:-1', 'n|1|你在外卖站跑了一个寒假，冻得手都裂了。|earn:6000~10000,health:-2', 'e|1|你接的私活被大客户看中，一单就赚了别人一年的生活费。|earn:30000~60000,happy:6'],
+  打扮自己:['g|3|你换了个发型，整个人精神多了。|looks:G1-3,cost:300~1500', 'g|2|你学会了穿搭。|looks:G1-3,cost:500~3000', 'g|1|你开始坚持护肤，皮肤真的变好了。|looks:G1-3,cost:1000~3000', 'g|1|你在街上被人问是不是明星。|looks:G1-3,happy:4,cost:500~2000', 'g|1|你换了副眼镜，朋友说你像换了个人。|looks:G1-3,cost:500~1500', 'z|2|你花钱买了一堆护肤品，脸上还是老样子。|cost:500~3000', 'z|1|你买了一柜子衣服，每天还是穿那两件。|cost:1000~3000', 'b|1|你烫头烫坏了，戴了一个月帽子。|looks:-2,happy:-4,cost:300~800', 'b|1|新买的化妆品让你过敏，脸肿了好几天。|looks:-2,happy:-3,cost:500~1500', 'n|1|你打扮了半天出门，没有一个人注意到。|happy:-1,cost:300~1000', 'e|1|一个摄影师在街上拍了你，照片在网上火了。|looks:G2-4,happy:7'],
+  按时下班:['g|3|你每天准时下班，晚上去散步。|stress:-8~-4,happy:1~3', 'g|2|你把工作和生活分得很清楚。|stress:-8~-4,happy:1~3', 'g|1|你下班后学会了做饭，厨艺越来越好。|stress:-6~-3,happy:3', 'g|1|你下班就去公园打羽毛球，身体都好了。|stress:-6~-3,health:1~2', 'g|1|你下班陪家人吃晚饭，一年都没错过一次。|stress:-6,happy:4', 'n|1|你按时下班，可回家也只是躺着刷手机。|stress:-3', 'n|1|你准点下班，同事们看你的眼神有点怪。|stress:-2,happy:-1', 'b|2|你摸鱼被领导抓了个正着，挨了一顿批。|stress:4,happy:-3,@perfdown', 'b|1|你前脚刚走，那天晚上就出了事，第二天被追责。|stress:6,happy:-4,@perfdown', 'b|1|绩效考核的时候，领导说你“态度不够积极”。|stress:4,happy:-2,@perfdown', 'e|1|你下班后搞的副业，一年竟赚了半份工资。|earn:20000~60000,happy:5'],
+  健身锻炼:['g|3|你每天早上坚持跑步。|health:G1-4,stress:-2', 'g|2|你办了健身卡，这次真的去了。|health:G1-4,stress:-2,cost:2000', 'g|1|你学会了游泳。|health:G1-4,stress:-2,cost:1000', 'g|1|你跑完了人生第一个半程马拉松。|health:G1-4,happy:5,stress:-3', 'g|1|你练出了腹肌，拍照都自信了。|health:G1-4,looks:1~2,cost:2000', 'z|2|你办了张健身卡，一共去了三次。|cost:2000', 'z|1|你买了跑鞋，一直放在门口。|cost:500', 'b|1|你在健身房拉伤了腰，躺了一个月。|health:-4,cost:2000', 'b|1|健身房老板跑路了，你的年卡打了水漂。|happy:-4,cost:3000', 'n|1|你在健身房被私教推销了半年，最后还是自己练。|health:0~1,stress:2,cost:2000', 'e|1|你坚持了一整年，体检时医生说你的身体年轻了好几岁。|health:G3-6,happy:4'],
+  休息放空:['g|3|你什么都没干，在家躺了一个星期。|stress:-14~-6,happy:1~3', 'g|2|你关掉手机，去公园坐了一下午。|stress:-14~-6,happy:1~3', 'g|2|你睡了一个又一个懒觉。|stress:-12~-6,happy:1~2', 'g|1|你一个人去海边待了几天，看了好几次日出。|stress:-14~-8,happy:3,cost:1000~3000', 'g|1|你泡了个澡，听着老歌，整个人松了下来。|stress:-10~-6,happy:2', 'g|1|你在阳台上种了几盆花，每天看它们长一点。|stress:-10~-5,happy:2', 'n|1|你想放空，脑子里却全是没做完的事。|stress:-3', 'n|1|你躺了一整天，晚上反而更焦虑了。|stress:1,happy:-1', 'b|1|你在家躺太久，腰开始疼了。|health:-1,stress:-4', 'e|1|你在一个午后突然想通了一件纠结了很久的事。|stress:-15,happy:5'],
+  娱乐放松:['g|3|你和朋友们去唱了通宵K。|happy:3~7,stress:-8~-4,cost:500~2000', 'g|2|你追完了一部八十集的剧。|happy:3~6,stress:-8~-4', 'g|1|你在游乐园玩了一整天。|happy:3~7,stress:-8~-4,cost:500~1500', 'g|1|你和朋友去露营看星星。|happy:4~7,stress:-8~-4,cost:800~2000', 'g|1|你去看了一场脱口秀，笑得肚子疼。|happy:4~6,stress:-6,cost:300~800', 'g|1|你们去玩了密室逃脱，被吓得尖叫。|happy:3~6,stress:-4,cost:300~800', 'n|1|你约朋友出去，结果大家都在低头玩手机。|happy:0~1,cost:200~600', 'b|1|你坐过山车坐吐了。|happy:-1,health:-1,cost:500~1000', 'b|1|你出去玩，手机被偷了。|happy:-5,cost:2000~5000', 'n|1|周末人山人海，你排了一天队，只玩了两个项目。|happy:1,stress:2,cost:500~1000', 'e|1|你在音乐节上被乐队拉上台合唱了一首歌。|happy:8,stress:-6'],
+  夜生活:['b|1|你夜夜泡在酒吧，慢慢离不开酒了。|happy:4,health:-3,cost:5000,@drunk|sober', 'g|1|你在酒吧认识了{新人}，你们在一起了。|happy:8,cost:3000,@meet|single', 'n|2|你在酒吧蹦到凌晨三点。|happy:3~7,health:-2,stress:-5,cost:1000~5000', 'n|2|你喝多了，在出租车上吐了一地。|happy:2~4,health:-2,stress:-4,cost:1000~3000', 'g|1|你在 livehouse 听了一晚上现场，嗓子都喊哑了。|happy:4~7,stress:-6,cost:500~1500', 'g|1|你们在大排档撸串喝啤酒，聊到了天亮。|happy:3~6,stress:-6,cost:300~1000', 'b|1|你在夜店和人起了冲突，被打破了头。|health:-5,happy:-4,cost:2000~5000', 'b|1|你喝断片了，醒来发现钱包和手机都没了。|happy:-5,cost:3000~8000', 'b|1|你喝了酒还开车，被交警拦下，驾照被吊销了。|happy:-6,stress:8,cost:5000', 'n|1|你在酒吧坐了一晚上，越喝越孤单。|happy:-2,stress:-2,cost:1000~3000', 'e|1|你在酒吧和一个陌生人聊了一夜，第二天才知道对方是个大老板，还给了你一张名片。|happy:5,stress:-4'],
+  陪伴伴侣:['g|3|你和{伴}出去度了个周末。|happy:2~5,stress:-3,cost:500~2000', 'g|2|你给{伴}做了一桌菜。|happy:2~5,stress:-3,cost:200~500', 'g|2|你和{伴}窝在沙发上看了一晚上电影。|happy:2~5,stress:-3', 'g|1|你和{伴}去拍了一组合照，挂在了客厅。|happy:3~5,cost:1000~3000', 'g|1|你记住了{伴}随口提过的一件小事，给了TA一个惊喜。|happy:4~6', 'g|1|你和{伴}散步散到很晚，说了很多以前没说过的话。|happy:3~6,stress:-4', 'n|1|你们待在一起，却各自刷着手机。|happy:0~1', 'b|1|你们为了谁洗碗吵了一架，冷战了三天。|happy:-4,stress:4', 'b|1|你忘了你们的纪念日，{伴}一整天没理你。|happy:-4,stress:3', 'n|1|{伴}最近工作很忙，你们一个月只吃了两顿饭。|happy:-1', 'e|1|你和{伴}去看了极光，TA在光下面哭了。|happy:8,stress:-6,cost:20000~40000|adult'],
+  陪伴家人:['g|3|你回家陪爸妈吃了顿饭，听他们唠叨了一晚上。|happy:2~5,stress:-3|par', 'g|1|你陪爸妈去体检，他们嘴上嫌你多事，心里很高兴。|happy:3~5,stress:-2|par', 'g|1|你教爸妈用智能手机，教了十遍他们还是学不会。|happy:2~4,stress:1|par', 'g|1|你带爸妈出去旅游了一趟，他们拍了几百张照片。|happy:4~6,cost:3000~8000|par', 'b|1|你回家和爸妈吵了一架，为的还是那几件老事。|happy:-3,stress:4|par', 'g|3|你陪{孩}去了趟动物园。|happy:2~5,stress:-3,@bond|kidy', 'g|1|你陪{孩}拼了一整天乐高。|happy:2~5,stress:-3,@bond|kidy', 'g|1|你去看了{孩}的学校演出，在台下拼命鼓掌。|happy:3~6,@bond|kidy', 'b|1|你陪{孩}写作业，没忍住吼了TA一顿。|happy:-2,stress:4|kidy', 'g|2|你带着孙辈去公园喂鸽子。|happy:2~5,stress:-3|grand', 'g|1|孙辈抱着你的腿不让你走。|happy:4~6|grand', 'e|1|一家人难得聚齐了，你们拍了一张全家福。|happy:7,stress:-4|par'],
+  辅导孩子:['g|3|你陪{学}写完了作业，还讲了两道难题。|stress:2,happy:2,@tutor', 'g|1|你和{学}一起做手工作业，做到半夜。|stress:3,happy:3,@tutor', 'g|1|{学}的成绩进步了，老师在家长群里点名表扬。|happy:5,@tutor', 'g|1|你给{学}讲题，讲着讲着自己也学到了新东西。|smarts:0~1,happy:2,@tutor', 'b|2|你辅导{学}写作业，气得血压飙升。|stress:8,health:-1,@tutor', 'b|1|你给{学}讲错了一道题，被老师在作业本上批了出来。|happy:-2,stress:3', 'b|1|{学}哭着说“你根本不懂”，摔门进了房间。|happy:-4,stress:5', 'n|1|你在旁边陪着，{学}一直在玩铅笔。|stress:3,@tutor', 'n|1|你看不懂{学}的数学题了，只好在网上搜。|stress:2', 'e|1|{学}在你的辅导下拿了数学竞赛的奖。|happy:7,@tutor,@tutor'],
+  晨练遛弯:['g|3|你每天早上在公园打太极。|health:G1-3,stress:-2', 'g|2|你沿着河边走了一万步。|health:G1-3,stress:-2', 'g|1|你加入了晨跑队，跑得比年轻人还快。|health:G1-3,happy:3', 'g|1|你每天早上去爬山，认识了一群老伙伴。|health:G1-3,happy:3', 'g|1|你在公园学会了抖空竹。|health:G1-3,happy:3', 'z|2|外面太冷，你又缩回了被窝。|', 'n|1|你走了几步就腿疼，坐在长椅上看别人锻炼。|stress:-1', 'b|1|你晨练时着了凉，咳嗽了一个月。|health:-2', 'b|1||@fall', 'e|1|你坚持晨练十年如一日，被社区评为“健康老人”。|health:G2-4,happy:6'],
+  广场舞:['g|3|你在广场舞队里当上了领舞。|happy:2~5,health:0~2', 'g|2|你们广场舞队去参加了区里的比赛。|happy:2~5,health:0~2', 'g|1|你学会了一支新舞，回家跳给老伴看。|happy:3~5', 'g|1|你们队拿了比赛第一名，奖品是一桶油。|happy:5', 'n|1|你们和隔壁队抢地盘，吵了一晚上。|happy:-1,stress:3', 'b|1|楼上的年轻人嫌你们吵，往下泼了一盆水。|happy:-4', 'b|1|你跳舞扭了腰，休息了半个月。|health:-3', 'n|1|你跳了一年，还是记不住动作。|happy:1', 'g|1|你在舞队里认识了几个聊得来的老伙伴。|happy:4', 'e|1|你们跳广场舞的视频被传到网上，播放量过了百万。|happy:7'],
+  下棋打牌:['g|3|你在楼下下了一下午的象棋。|happy:2~4,smarts:0~1', 'g|1|你打麻将赢了一百块，高兴得请大家吃了冰棍。|happy:3~5', 'g|1|你赢了公园里的“棋王”，围观的人都在鼓掌。|happy:5,smarts:0~1', 'g|1|你学会了下围棋，每天和自己复盘。|smarts:0~2,happy:2', 'b|2|你和老李下棋吵了起来，三天没说话。|happy:-2', 'b|1|你打麻将输了半个月的退休金。|happy:-3,cost:500~2000', 'b|1|你在牌桌上坐太久，腿都肿了。|health:-2', 'n|1|你在一边看别人下棋，忍不住支招，被骂“观棋不语”。|happy:-1', 'n|1|你们几个老伙计凑不齐一桌了，有人住进了医院。|happy:-3', 'e|1|你在区里的老年象棋赛上拿了冠军。|happy:7,smarts:0~2'],
+  养花钓鱼:['g|3|你在阳台上种满了花。|stress:-10~-5,happy:1~3', 'g|2|你在河边钓了一天鱼，一条也没钓到，心情却很好。|stress:-10~-5,happy:1~3', 'g|1|你钓到了一条三斤的鲤鱼，提着在小区里转了一圈。|happy:5,stress:-6', 'g|1|你养的君子兰开花了，邻居都来看。|happy:4,stress:-5', 'g|1|你在楼下开了块小菜地，吃上了自己种的黄瓜。|happy:3,stress:-6,health:0~1', 'n|1|你的花被猫刨了，你守了好几个晚上。|stress:1', 'b|1|你钓鱼时脚下一滑，掉进了河里。|health:-3,happy:-2', 'b|1|你精心养的兰花还是死了，你难过了好几天。|happy:-3', 'n|1|你在河边坐了一天，晒得脸通红。|stress:-4,health:-1', 'e|1|你培育出了一株罕见的花，花卉协会的人上门来看。|happy:7,stress:-8'],
+  老年大学:['g|3|你在老年大学学了书法。|smarts:G1-3,happy:2,cost:1000', 'g|2|你学会了用智能手机拍视频。|smarts:G1-3,happy:2,cost:1000', 'g|1|你报了老年大学的英语班。|smarts:G1-3,happy:2,cost:1000', 'g|1|你学了摄影，拍的照片上了社区展览。|smarts:G1-3,happy:4,cost:1500', 'g|1|你学会了弹电子琴，在孙辈的生日会上弹了一首。|smarts:G1-3,happy:4,cost:1000', 'z|2|你上了两节课就不想去了。|cost:1000', 'n|1|你报的班太抢手，没抢到名额。|happy:-1', 'b|1|你学电脑学得头昏眼花，回家血压都高了。|health:-2,cost:1000', 'g|1|你在老年大学交到了一群新朋友。|happy:4,cost:1000', 'e|1|你在老年大学写的回忆文章登上了报纸。|smarts:G2-4,happy:6'],
+  带孙子:['g|3|你帮孩子带了一整年孙辈，累并快乐着。|happy:3~6,stress:4,health:-1', 'g|1|孙辈学会说的第一个词是“{祖}”，你乐了好几天。|happy:6,stress:2', 'g|1|你每天接送孙辈上下学，风雨无阻。|happy:3~5,stress:3,health:-1', 'g|1|你给孙辈讲你年轻时候的故事，他们听得入了迷。|happy:5', 'b|1|你和儿女为了怎么带孩子吵了起来。|happy:-4,stress:5', 'b|1|你一个没看住，孙辈摔破了头，你自责了好久。|happy:-5,stress:6', 'n|1|你带孙辈带得腰酸背痛，晚上睡不着觉。|health:-2,stress:4,happy:1', 'n|1|孙辈只想玩手机，不太爱搭理你。|happy:-1', 'g|1|孙辈在幼儿园画了一张全家福，最大的那个人是你。|happy:6', 'e|1|孙辈抱着你说：“我长大了要给你买大房子。”|happy:8'],
+  捡瓶子:['n|3|你翻了一年的垃圾桶，卖了不少废品。|earn:1500~5000,health:-1', 'n|1|你每天凌晨去夜市收摊后的地方捡瓶子。|earn:1500~4000,health:-1', 'g|1|一个好心的阿姨每天都把家里的纸箱留给你。|earn:2500~5000,happy:3', 'g|1|你在垃圾堆里捡到一台还能用的收音机。|earn:1000~3000,happy:4', 'b|1|你和另一个捡瓶子的人为了地盘打了一架。|earn:500~1500,health:-4', 'b|1|你翻垃圾桶时被碎玻璃扎破了手，伤口发炎了。|earn:500~2000,health:-4', 'b|1|废品站老板压价，你辛苦了一个月只换了几十块。|earn:200~800,happy:-3', 'n|1|你推着一车纸箱走了五公里，腰都直不起来了。|earn:1500~3000,health:-2', 'n|1|下了一个月的雨，纸箱全泡烂了。|earn:300~1000,happy:-2', 'e|1|你在旧衣服口袋里翻出了一沓钱，交给了警察。警察表扬了你，还帮你联系了救助站。|happy:8'],
+  乞讨:['n|2|你在天桥上跪了一天，碗里只有几个硬币。|earn:0~500,happy:-3', 'g|2|今年好心人多，你讨到了不少钱。|earn:3000~6000,happy:-1', 'g|1|一个小孩把手里的面包递给了你。|earn:500~2000,happy:3', 'g|1|一个路人请你吃了顿热饭，还和你聊了很久。|earn:500~1500,happy:4', 'b|1|城管把你赶走了，你换了三个地方都待不住。|earn:0~800,happy:-4,stress:3', 'b|1|几个混混抢走了你一天讨来的钱。|earn:0~300,happy:-5,health:-2', 'b|1|有人朝你的碗里扔烟头，还拍视频笑话你。|earn:200~800,happy:-6', 'n|1|你在地铁口坐了一整天，人来人往，没人看你一眼。|earn:200~1000,happy:-4', 'n|1|下雪天街上没人，你缩在角落里冻了一夜。|earn:0~300,health:-3', 'e|1|一个路人拍了你的视频发到网上，好多人来给你送东西。|earn:5000~15000,happy:6'],
+  打日结零工:['n|3|你每天天不亮就去劳务市场等活。|earn:3000~9000,health:-4~-2', 'n|1|你在工地扛了一个月的水泥。|earn:4000~9000,health:-4~-2', 'n|1|你帮人卸货，一车一车地搬到半夜。|earn:3000~7000,health:-3~-2', 'g|1|一个包工头看你干活实在，让你跟了他半年。|earn:8000~15000,happy:4', 'b|1|你干完活，老板说没钱，让你明天再来。|earn:0~1000,happy:-5', 'b|1|你从脚手架上摔了下来，好在只是扭伤。|earn:1000~3000,health:-6', 'n|1|你等了一整天，一个活都没接到。|earn:0~500,happy:-3', 'n|1|你在餐馆后厨洗了一个月的碗，手泡得发白。|earn:3000~6000,health:-2', 'b|1|你被黑中介骗去一个黑厂，干了一个月一分钱没拿到。|happy:-6,stress:6', 'e|1|你干活时救了一个差点被砸到的工友，他的老板给了你一份长期的活。|earn:10000~20000,happy:7'],
+  喝酒取暖:['n|3|你买了一瓶最便宜的白酒，喝完就不冷了。|happy:4,health:-3,@drunk30', 'n|1|你和几个流浪汉凑钱买了一箱啤酒，围着火堆喝到半夜。|happy:5,health:-3,@drunk30', 'n|1|你喝醉了在长椅上睡着，醒来身上盖着一件不知道谁的外套。|happy:3,health:-2,@drunk30', 'b|1|你喝多了摔在台阶上，磕掉了一颗牙。|health:-5,happy:-2,@drunk30', 'b|1|你喝醉了和人吵架，被打了一顿。|health:-4,happy:-3', 'b|1|你喝了来路不明的散装酒，上吐下泻了三天。|health:-6', 'n|1|你拿着酒瓶坐在桥洞下，想起了以前的家。|happy:-2,health:-2,@drunk30', 'g|1|你喝着酒和一个老流浪汉聊天，他给你讲了很多他年轻时的事。|happy:4,health:-2', 'n|1|你本想喝点酒暖暖身子，最后把钱省下来买了个馒头。|health:1', 'e|1|你醉倒在路边，被一个好心人送去了救助站。|health:3,happy:2'],
+  劳动改造:['g|2|你表现积极，获得了减刑。|happy:6,@reduce|canreduce', 'n|3|你在车间干了一整年。|health:-1', 'n|1|你在监狱食堂帮厨，学会了做大锅饭。|health:0~1', 'n|1|你在缝纫车间踩了一年缝纫机，手指上全是针眼。|health:-1', 'g|1|你学会了电焊，师傅说出去能找到饭碗。|happy:3,smarts:0~1', 'g|1|你被评为了“劳动积极分子”。|happy:4', 'b|1|你在车间和人起了冲突，被关了禁闭。|happy:-4,stress:5', 'b|1|你干活时被机器夹伤了手。|health:-4', 'n|1|日复一日的劳动让你麻木了，你不再数日子。|happy:-2', 'e|1|你提的一个改进被采纳了，监狱给你记了一次大功。|happy:6,@reduce|canreduce'],
+  在狱中读书:['g|3|你在监狱里读完了一套历史书。|smarts:G1-3', 'g|2|你在狱中考了个自考文凭。|smarts:G1-3,happy:2', 'g|1|你把监狱图书馆能借的书都借了一遍。|smarts:G1-3', 'g|1|你开始写读书笔记，写满了三个本子。|smarts:G1-3,happy:1', 'z|2|你翻了几页书，又躺下了。|', 'n|1|你读到一句话，想了一个晚上。|stress:-3', 'b|1|同监室的人嫌你看书装清高，故意找你麻烦。|happy:-3,stress:3', 'g|1|你给狱友们读报纸，大家都叫你“先生”。|happy:3', 'n|1|你想读书，可狱里的书你都读过了。|happy:-1', 'e|1|你在狱中写的文章拿了全国征文一等奖。|smarts:G2-4,happy:6'],
+  放风锻炼:['g|3|你每天在操场上跑步。|health:G1-3', 'g|1|你放风时练俯卧撑，一次能做一百个。|health:G1-3,happy:1', 'g|1|你和狱友们打了一场篮球，赢了。|health:G1-3,happy:3', 'z|2|你懒得动，一直躺着。|', 'n|1|你放风的时候抬头看天，看了很久。|stress:-3', 'b|1|你在操场上和人起了冲突，被打了一顿。|health:-4,happy:-3', 'b|1|你跑步时崴了脚。|health:-2', 'g|1|你教一个年轻的狱友打太极。|health:G1-2,happy:2', 'n|1|下雨天不能放风，你在监室里来回踱步。|stress:2', 'e|1|你在监狱运动会上拿了长跑第一。|health:G2-4,happy:5'],
+  写信回家:['g|3|你给家里写了一封很长的信，回信里夹着一张照片。|happy:4|fam', 'g|1|家里回信说一切都好，让你安心改造。|happy:4,stress:-3|fam', 'g|1|你收到了家里寄来的一件毛衣，针脚密密的。|happy:5|fam', 'b|1|你寄出去的信，一直没有回音。|happy:-3|fam', 'b|1|回信里说家里出了点事，你什么也帮不上。|happy:-4,stress:5|fam', 'n|1|你写了又撕，撕了又写，最后只写了“我挺好的”。|happy:1|fam', 'n|2|你写了一封信，却不知道该寄给谁。|happy:-2|nofam', 'n|1|你给自己写了一封信，写给出狱那天的你。|happy:1,stress:-2|nofam', 'g|1|你给受害人写了一封道歉信。|happy:2,stress:-3', 'e|1|家人来探视了，隔着玻璃，你们说了整整半个小时。|happy:8|fam'],
+  打坐念经:['g|3|你在佛前坐了一整天，心如止水。|happy:2~5,health:1~2,stress:-8~-4', 'g|1|你念了一整年的经，心里越来越静。|happy:2~4,stress:-8~-4', 'g|1|你打坐时听见窗外的雨声，若有所悟。|happy:3~5,stress:-8', 'g|1|你跟着师父做早课，嗓音越来越稳。|happy:2~4,health:1', 'n|1|你打坐时腿麻了，站起来摔了一跤。|health:-1', 'n|1|你一闭眼就想起山下的事，怎么也静不下来。|stress:2', 'b|1|你打坐时睡着了，被师父用香板敲了一下。|happy:-1', 'z|1|你坐了一天，什么也没悟到。|', 'g|1|你打坐时一只松鼠跳到了你膝盖上，你没有动。|happy:4,stress:-6', 'e|1|你在禅堂坐到天亮，忽然明白了很多事。|happy:6,stress:-12,smarts:0~2'],
+  扫地挑水:['g|3|你每天清晨扫地、挑水、打拳。|health:G1-3', 'g|1|你一个人挑满了寺里的三口大缸。|health:G1-3,happy:2', 'g|1|你扫完落叶，坐在台阶上喝了一碗热粥。|health:G1-3,happy:2', 'z|2|你偷懒睡了个午觉，被师父罚抄经。|', 'b|1|你挑水时在山路上滑倒，扭了脚。|health:-3', 'b|1|你劈柴劈到了手。|health:-3', 'n|1|你扫了一天的地，风一吹又落满了叶子。|stress:-2', 'g|1|你在菜园里种的青菜，被做成了寺里的斋饭。|happy:3,health:G1-2', 'n|1|游客太多，你扫完一遍又要扫一遍。|stress:2', 'e|1|方丈说你劳作时也在修行，让你做了寺里的执事。|happy:5,health:G1-3'],
+  读经:['g|3|你在藏经阁里读了一整年的经书。|smarts:G1-3', 'g|1|你抄完了一部《金刚经》。|smarts:G1-3,stress:-3', 'g|1|你和师兄们辩经，辩了一个下午。|smarts:G1-3,happy:2', 'g|1|你开始给来寺里的香客讲经。|smarts:G1-3,happy:3', 'z|2|你读着读着就睡着了。|', 'n|1|有一段经文你读了一百遍，还是不明白。|stress:2', 'b|1|你读经读到深夜，眼睛越来越花。|health:-1', 'n|1|你翻开经书，想起了自己的从前。|happy:-1', 'g|1|你在古经里发现了一页夹着的旧信，读完泪流满面。|happy:2,stress:-4', 'e|1|你对一段经文的注解被收进了寺里的经藏。|smarts:G2-4,happy:5'],
+  要零花钱:['g|3|爸妈给了你 {钱} 零花钱，你买了一堆零食和漫画。|happy:2~5,@pocket', 'g|2|你软磨硬泡要了 {钱}，转眼就花光了。|happy:2~4,@pocket', 'g|1|你拿着 {钱} 和同学去吃了一顿好的。|happy:3~5,@pocket', 'g|1|你把 {钱} 存进了存钱罐，想攒着买个大的。|happy:2,@pocket', 'g|1|奶奶偷偷塞给你 {钱}，让你别告诉爸妈。|happy:4,@pocket', 'n|1|爸妈给了你 {钱}，还让你记账，每一笔都要说清楚。|happy:1,@pocket', 'b|1|你拿零花钱买了刮刮乐，一分没中，被爸妈发现了。|happy:-4,@pocket', 'b|1|你的零花钱在学校被高年级的抢走了。|happy:-5,stress:4,@pocket', 'n|2|妈妈翻遍了口袋，只找出几张皱巴巴的零钱。|happy:-2|poor', 'n|1|爸爸说：“家里哪有闲钱？”你没再开口。|happy:-2|poor', 'b|1|你要零花钱，爸妈为此吵了一架。|happy:-4,stress:3|poor'],
+  买新东西:['g|3|爸妈咬咬牙，给你买了{物}。|happy:3~6,@thing', 'g|2|你终于拿到了{物}，在同学面前很有面子。|happy:3~6,@thing', 'g|1|你买了{物}，新鲜了一个星期。|happy:2~4,@thing', 'g|1|你拿着{物}拍了好多照片发朋友圈。|happy:3~5,@thing', 'b|1|你买的{物}是假货，没用几天就坏了。|happy:-3,@thing', 'b|1|你的{物}第二天就在学校被偷了。|happy:-5,@thing', 'n|1|你买了{物}，才发现同学们早就换了更新的。|happy:0~1,@thing', 'n|1|爸妈说可以买，但要用期末成绩来换。|stress:3,happy:1,@thing', 'b|2|你吵着要买{物}，爸妈说什么也不同意，你们冷战了好几天。|happy:-4,stress:3|poorish', 'b|1|你偷拿家里的钱买了{物}，被发现后挨了一顿打。|happy:-6,stress:5,@thing|poorish', 'e|1|你攒了一年的零花钱，自己买下了{物}。|happy:7'],
+  陪宠物:['g|2|你每天早晚带{宠}出去遛弯。|happy:2~5,stress:-5~-2,health:0~2,@paws|dog', 'g|1|你带{宠}去公园，它追了一下午的飞盘。|happy:3~5,stress:-4,health:0~2,@paws|dog', 'g|1|{宠}一听到你的脚步声，就在门口转圈。|happy:3~5,stress:-3,@paws|dog', 'g|1|你给{宠}洗了个澡，它甩了你一身水。|happy:2~4,@paws|dog', 'g|1|你带{宠}去爬山，它跑得比你还快。|happy:3~5,health:1~2,@paws|dog', 'g|1|你教会了{宠}握手和坐下，它得意极了。|happy:3~5,@paws|dog', 'n|1|{宠}趴在你脚边睡着了，打起了小呼噜。|happy:2,stress:-3|dog', 'b|1|你遛{宠}的时候它突然冲出去，把你拽倒在地上。|health:-2,happy:-1|dog', 'b|1|{宠}在公园和别的狗打了起来，你赔了人家医药费。|cost:500~3000,happy:-3|dog', 'b|1|{宠}偷吃了巧克力，你连夜抱着它去了宠物医院。|cost:1000~3000,stress:5|dog', 'e|1|{宠}在宠物运动会上拿了飞盘比赛第一名。|happy:7,@paws|dog',
+    'g|2|{宠}趴在你腿上打呼噜，你一动都不敢动。|happy:2~5,stress:-5~-2,@paws|cat', 'g|1|你拿逗猫棒陪{宠}玩了一晚上。|happy:3~5,stress:-3,@paws|cat', 'n|1|{宠}把你桌上的东西一样一样推到了地上。|happy:1~3|cat', 'g|1|你给{宠}买了个纸箱，它比玩具还喜欢。|happy:3~4,@paws|cat', 'n|1|你看书的时候，{宠}一屁股坐在了书上。|happy:2|cat', 'n|1|你给{宠}剪指甲，剪了一个小时只剪了两个。|happy:1,stress:1|cat', 'g|1|{宠}半夜跳上床，把头埋进你的脖子里。|happy:3~6,@paws|cat', 'b|1|{宠}玩疯了，在你手上抓了一道血口子，你去打了狂犬疫苗。|health:-2,cost:300~1500|cat', 'b|1|{宠}吐了一地毛球，你收拾了一个早上。|happy:-1|cat', 'b|1|你想抱{宠}，它嫌弃地扭头就走了。|happy:-1|cat', 'e|1|{宠}的照片被你发到网上，成了表情包。|happy:7,@paws|cat',
+    'g|1|你给{宠}换了新的垫料，它钻进去就不出来了。|happy:2~4|small', 'g|1|你看着{宠}吃东西，看了好久。|happy:2~3,stress:-3|small', 'g|1|{宠}从你手心里叼走了一粒瓜子。|happy:3|small', 'g|1|你教{宠}吹口哨，它学得比你还像。|happy:3~5|bird', 'g|1|{宠}站在你肩膀上，跟着你在屋里转。|happy:3~5|bird', 'g|1|你坐在池边喂锦鲤，一池子的鱼都游了过来。|happy:2~4,stress:-4|fish', 'g|1|你蹲在池边看鱼，看了一下午，心里静了下来。|stress:-6~-3|fish', 'g|1|你给{宠}梳了一下午的毛。|happy:3~5,stress:-3|big', 'g|1|你牵着{宠}在草场上走了一圈。|happy:3~5,health:0~1|big', 'n|1|你陪了{宠}一会儿，它好像不太在意你在不在。|happy:0~1', 'n|1|{宠}今天精神不太好，你担心了一整天。|stress:3', 'g|1|你给{宠}拍了一百张照片，挑出了一张最好看的。|happy:3,@paws', 'g|1|你和{宠}在阳光下一起打了个盹。|happy:3,stress:-4'],
+  陪情人:['n|3|你和{情}在酒店待了一个下午。|happy:4~8,stress:3~6,@risk', 'n|2|你陪{情}看了场电影，全程戴着口罩。|happy:4~8,stress:3~6,@risk', 'n|1|你和{情}开车去了邻市，那里没人认识你们。|happy:5~8,stress:3~5,@risk', 'g|1|你和{情}在海边过了个周末，回来晒黑了，只好说是出差晒的。|happy:6~9,stress:4,cost:5000~15000,@risk', 'g|1|{情}给你做了一顿饭，你吃着吃着有点恍惚。|happy:5~8,stress:3,@risk', 'b|1|你和{情}在商场里差点撞上{伴}的同事，吓出一身冷汗。|stress:8,happy:-1,@risk2', 'b|1|{情}问你什么时候离婚，你答不上来，两个人吵了一架。|happy:-4,stress:6', 'b|1|{情}发了一条朋友圈，照片角落里露出了你的手表。|stress:10,@risk2', 'n|1|你约{情}出来，TA却说今天没空。|happy:-2,stress:2', 'n|1|你在{情}那里待到很晚，回家时{伴}已经睡了。|happy:2,stress:5,@risk', 'e|1|你和{情}在一个小镇住了三天，那几天你几乎忘了自己是谁。|happy:10,stress:5,@risk'],
+  摆地摊:['n|3|你在夜市摆了一年摊，风吹日晒，攒下了一点钱。|earn:3000~15000,health:-2~0,stress:3', 'n|2|你卖手机壳和袜子，一晚上能赚个两三百。|earn:3000~12000,stress:3', 'g|1|你的烤冷面摊有了一群回头客。|earn:8000~20000,happy:3', 'g|1|你卖的炒粉被人拍了发到网上，突然火了，门口排起了长队。|earn:20000~50000,happy:8,stress:4', 'b|2|城管来了，你推着车跑了三条街，货还是被收走了。|cost:500~3000,happy:-4,stress:5', 'b|1|你占了别人的位置，被几个摊主赶走了。|cost:300~1000,happy:-3', 'b|1|你进的货全是次品，被顾客找上门来退钱。|cost:1000~4000,happy:-3', 'n|1|下了一个月的雨，你只出了几天摊。|earn:500~2000,happy:-2', 'n|1|隔壁摊和你卖一样的东西，还比你便宜一块。|earn:1000~5000,stress:4', 'g|1|一个常来的老奶奶每次都多给你几块钱，说你不容易。|earn:3000~8000,happy:4', 'e|1|一个商场的招商经理看中了你的摊，请你进商场开店。|earn:30000~80000,happy:8'],
+  直播带货:['b|5|你对着手机喊了一年“家人们”，直播间最多的时候只有十几个人。|cost:2000~10000,happy:-4,stress:5', 'b|2|你囤了一屋子货，一件都没卖出去。|cost:5000~20000,happy:-5,stress:6', 'b|1|你直播时说错了一句话，被网友骂上了热搜。|happy:-8,stress:10', 'b|1|你卖的货被查出是假冒伪劣，被平台封号，还赔了一大笔钱。|cost:50000~300000,happy:-10,stress:12', 'n|2|你的直播间慢慢有了些老粉，一年下来赚了点钱。|earn:10000~80000,happy:4,stress:4,@live', 'n|1|你接了几个小品牌的广告，收入还算可以。|earn:20000~60000,happy:3,@live', 'n|1|你直播到凌晨三点，嗓子哑了，钱也没多赚多少。|earn:5000~20000,health:-2,stress:5,@live', 'g|1|你和一个大主播连了麦，粉丝一晚上涨了十万。|earn:50000~200000,happy:8,@live', 'g|1|你卖家乡的土特产，帮村里卖出了几万斤橙子。|earn:30000~100000,happy:8,@live', 'e|1|你的一场直播突然火了，一晚上卖了几十万单！|earn:500000~3000000,happy:12,stress:6,@live', 'n|1|你签了一家 MCN 公司，可赚的钱大半都被公司拿走了。|earn:10000~40000,stress:5,@live'],
+  跑网约车:['n|3|你每天跑十二个小时，腰越来越不好了。|earn:25000~60000,health:-3~-1,stress:4', 'n|2|你跑了一年网约车，熟悉了这座城市的每一条小路。|earn:25000~60000,stress:3', 'n|1|你遇到过形形色色的乘客，听过很多人的故事。|earn:25000~50000,happy:2', 'g|1|一个乘客落下了一个包，你送了回去，对方送来了锦旗。|earn:25000~50000,happy:5', 'g|1|你接了一个长途单，一趟就赚了半个月的钱。|earn:40000~70000,happy:3', 'b|1|一个醉酒的乘客吐了你一车，还给了你差评。|earn:15000~40000,happy:-4,stress:5', 'b|1|乘客下车没付钱就跑了。|earn:15000~40000,happy:-3', 'b|1|你在路口被一辆闯红灯的车撞了，车头凹了进去。|cost:10000~50000,health:-8~-3,stress:6', 'b|1|平台抽成又涨了，你跑得更多，赚得更少。|earn:15000~30000,stress:5,happy:-2', 'n|1|你在车里吃了一年的盒饭，胃开始不舒服了。|earn:25000~50000,health:-2', 'e|1|你载过的一个乘客是个老板，请你去给他当专职司机。|earn:60000~100000,happy:6'],
+  烧香算命:['g|2|算命先生摸着胡子说你下半辈子大富大贵。|happy:2~5,cost:200~2000', 'g|1|你求了一支上上签，走路都轻快了。|happy:3~5,cost:100~500', 'g|1|大师说你命里有贵人相助。|happy:2~4,cost:200~2000', 'b|2|算命先生说你今年犯太岁，你一整年都提心吊胆。|stress:3~6,happy:-2,cost:200~2000', 'b|1|你求了一支下下签，越想越不对劲。|stress:3~6,happy:-2,cost:100~500', 'b|1|大师说你有血光之灾，要做场法事化解，收了你 {大钱}。|stress:4,@bigscam|adult', 'n|1|你在寺庙里坐了一下午，听着钟声，什么也没想。|stress:-5~-2,cost:100~300', 'n|1|你烧了炷香，许了个愿，没告诉任何人。|stress:-4~-2,cost:50~200', 'n|1|算命先生的话模棱两可，你听了跟没听一样。|cost:200~1000', 'b|1|你在寺庙门口被人硬塞了一炷“高香”，开口就要你八百八。|happy:-3,cost:888', 'e|1|一个算命先生拦住你，说什么也不收钱，只说了一句：“好好过日子。”|happy:4,stress:-5'],
+  做义工:['g|3|你周末去流浪动物救助站帮忙，给狗狗们洗了一下午澡。|happy:2~5,stress:-4~-1', 'g|2|你在社区帮老人们学用智能手机。|happy:2~5,stress:-3~-1', 'g|1|你在马拉松比赛上当志愿者，给选手递了一天水。|happy:2~4,health:0~1', 'g|1|你去山区支教了一个月，孩子们在你走的那天追着车跑了很远。|happy:8,stress:-4', 'g|1|你在医院做导诊志愿者，帮一个迷路的老人找到了科室。|happy:4', 'g|1|你在养老院做义工时认识了{新人}，你们在一起了。|happy:10,@meet|single18', 'b|1|你在活动里被人当成免费劳动力使唤了一整天，还没落着好。|happy:-3,stress:3', 'b|1|你发现那个“公益组织”在打着公益的名义收钱，气得退了出来。|happy:-4,stress:3', 'n|1|你报名了好几个活动，都因为人满没去成。|happy:-1', 'n|1|你在河边捡了一下午垃圾，第二天又被人扔满了。|happy:0~2', 'e|1|你帮过的一个孩子考上了大学，给你写了一封长长的感谢信。|happy:9,stress:-5'],
+};
+const VCOND = {
+  adult:() => S.age >= 18, minor:() => S.age < 18, single:() => !S.partner, single18:() => !S.partner && S.age >= 18,
+  par:() => parentsAlive(), kidy:() => S.kids.some(k => !k.dead && S.age - k.b < 25), grand:() => S.grand > 0,
+  fam:() => parentsAlive() || S.kids.some(k => !k.dead), nofam:() => !parentsAlive() && !S.kids.some(k => !k.dead),
+  poor:() => tier() === 0, poorish:() => tier() <= 1, calm:() => S.st.stress < 80, frazzled:() => S.st.stress >= 80,
+  sober:() => !S.flags.drunkard, canreduce:() => S.jail > 1,
+  dog:() => VX.pet && PETS[VX.pet.i].kind === 'dog', cat:() => VX.pet && PETS[VX.pet.i].kind === 'cat', small:() => VX.pet && PETS[VX.pet.i].kind === 'small',
+  bird:() => VX.pet && PETS[VX.pet.i].kind === 'bird', fish:() => VX.pet && PETS[VX.pet.i].kind === 'fish', big:() => VX.pet && PETS[VX.pet.i].kind === 'big',
+};
+let VX = {};
+const VPRE = {
+  陪宠物:() => { VX.pet = pick(pets()); },
+  要零花钱:() => { VX.pocket = R(3, 15) * 100 * (tier() + 1); },
+  买新东西:() => { [VX.item, VX.price] = pick([['新款手机', 6000], ['限量球鞋', 2500], ['游戏机', 3500], ['名牌外套', 3000], ['平板电脑', 4000], ['蓝牙耳机', 1500], ['山地自行车', 2000]]); },
+  烧香算命:() => { VX.big = R(1, 5) * 10000; },
+};
+/* 附带的事：前一组在记日志前改数值，后一组在记日志后发生 */
+const VFX = {
+  pocket:fx => famPay(VX.pocket),
+  thing:fx => { famPay(VX.price); if (VX.item === '名牌外套') fx.looks = (fx.looks || 0) + 1; },
+  bigscam:fx => { scam(VX.big); fx.money = (fx.money || 0) - VX.big; },
+};
+const VHOOK = {
+  perfdown:() => { if (S.job) S.job.perf = Math.max(0, S.job.perf - 1); },
+  drunk:() => { S.flags.drunkard = 1; },
+  drunk30:() => { if (!S.flags.drunkard && chance(.3)) S.flags.drunkard = 1; },
+  meet:() => { if (!S.partner) setPartner(VX.newName); },
+  bond:() => { const k = S.kids.find(k => !k.dead && S.age - k.b < 25); if (k) k.bond = (k.bond || 0) + 1; },
+  tutor:() => { const k = kidOfAge(6, 17); if (k) k.tutor = (k.tutor || 0) + 1; },
+  fall:() => accident(ACC.find(x => x.id === 'fall')),
+  reduce:() => { if (S.jail > 1) S.jail--; },
+  paws:() => cue('paws'),
+  risk:() => { if (isMarried() && chance(.12)) affairCaught(pick(CAUGHT_HOW)); },
+  risk2:() => { if (isMarried() && chance(.4)) affairCaught(pick(CAUGHT_HOW)); },
+  live:fx => { if (fx.money > 0){ S.flags.liveEarn = (S.flags.liveEarn || 0) + fx.money; if (S.flags.liveEarn >= 1e6) unlock('streamer'); } },
+};
+const VCACHE = new Map();
+function vparse(label){
+  if (VCACHE.has(label)) return VCACHE.get(label);
+  const list = VARY[label].map(s => {
+    const [k, w, t, fx = '', c = ''] = s.split('|');
+    const o = {k, w:k === 'e' ? .4 : Math.min(2, +w || 1), t, fx:[], pre:[], post:[], c:c ? c.split(',') : []};
+    fx.split(',').filter(Boolean).forEach(p => {
+      if (p[0] === '@'){ const h = p.slice(1); (VFX[h] ? o.pre : o.post).push(h); return; }
+      const [key, v] = p.split(':');
+      if (v[0] === 'G'){ const [lo, hi] = v.slice(1).split('-').map(Number); o.fx.push([key, 'G', lo, hi]); }
+      else if (v.includes('~')){ const [lo, hi] = v.split('~').map(Number); o.fx.push([key, 'R', Math.min(lo, hi), Math.max(lo, hi)]); }
+      else o.fx.push([key, 'N', +v]);
+    });
+    return o;
+  });
+  VCACHE.set(label, list);
+  return list;
+}
+function vfill(t){
+  const P = S.partner, A = S.affair, k = S.kids.find(k => !k.dead && S.age - k.b < 25), ks = kidOfAge(6, 17);
+  return t.replace(/\{伴\}/g, P ? P.name : '家里那位').replace(/\{情\}/g, A ? A.n : 'TA').replace(/\{孩\}/g, k ? k.n : '孩子').replace(/\{学\}/g, ks ? ks.n : '孩子')
+    .replace(/\{宠\}/g, VX.pet ? VX.pet.n : '它').replace(/\{新人\}/g, VX.newName || '').replace(/\{钱\}/g, fmt(VX.pocket || 0)).replace(/\{物\}/g, VX.item || '')
+    .replace(/\{大钱\}/g, fmt(VX.big || 0)).replace(/\{祖\}/g, S.gender === 'm' ? '爷爷' : '奶奶');
+}
+function wpickBy(list){ let r = Math.random() * list.reduce((s, o) => s + o.w, 0); for (const o of list){ r -= o.w; if (r <= 0) return o; } return list[list.length - 1]; }
+function varyRun(a){
+  VX = {newName:randName(other())};
+  if (VPRE[a.l]) VPRE[a.l]();
+  const ok = vparse(a.l).filter(o => o.c.every(c => VCOND[c] && VCOND[c]()));
+  if (!ok.length){ a.f(); return; }
+  let o = wpickBy(ok), fx = {};
+  for (let tries = 0; tries < 2; tries++){
+    fx = {}; let lazy = false;
+    for (const [k, t, lo, hi] of o.fx){
+      let v;
+      if (t === 'G'){ v = grow(k, lo, hi); if (!v){ lazy = true; break; } }
+      else v = t === 'R' ? R(lo, hi) : lo;
+      if (k === 'cost'){ if (S.age >= 18) fx.money = (fx.money || 0) - v; else famPay(v); }
+      else if (k === 'earn') fx.money = (fx.money || 0) + v;
+      else fx[k] = (fx[k] || 0) + v;
+    }
+    if (!lazy) break;
+    const zs = ok.filter(x => x.k === 'z' || (x.k === 'n' && !x.fx.some(f => f[1] === 'G')));
+    o = zs.length ? wpickBy(zs) : {k:'n', t:'你忙活了一阵，什么也没变。', fx:[], pre:[], post:[]};
+  }
+  o.pre.forEach(h => VFX[h](fx));
+  if (o.t) L(vfill(o.t), o.k === 'z' ? 'n' : o.k === 'e' ? 'g' : o.k, fx);
+  o.post.forEach(h => VHOOK[h](fx));
+}
+
+/* ---------- 规则比较复杂的行动：保留原来的规则，每句话换十种说法 ---------- */
+const ALT = {
+  '你加班加点，领导都看在眼里。':['你连续三个月每天最后一个走，保安都认识你了。', '你主动接下了别人都不想碰的项目。', '你周末也在回工作消息，领导在会上提了你一句。', '你把手上的事做得滴水不漏，挑不出毛病。', '你每天第一个到公司，把咖啡机都用坏了一台。', '你熬了几个通宵，终于赶在截止前交了方案。', '你帮同事收拾了一个烂摊子，老板记住了你的名字。', '你出差跑了大半个中国，签回来几个客户。', '你把部门的流程理了一遍，效率高了一大截。'],
+  '你加班到凌晨，方案被领导直接否了。':['你忙了一整年，功劳都记在了别人头上。', '你熬夜做的方案，被客户一句话推翻了。', '你加班到胃疼，领导却说“辛苦是应该的”。', '你拼命干活，年终考核还是拿了个“合格”。', '你忙中出错，被扣了半个月奖金。', '你连轴转了一个月，病倒在了工位上。', '你辛苦带的项目，最后被砍掉了。', '你加班加到和家里人吵了一架。', '你通宵改完的稿子，领导看都没看就说重做。'],
+  '老板说：“明年再说。”':['老板笑着拍拍你的肩：“好好干，机会多的是。”', '老板说公司今年效益不好，大家都没涨。', '老板说要考虑考虑，然后就没了下文。', 'HR 说今年的调薪名额已经满了。', '老板说你的要求很合理，但预算已经定了。', '老板把话题岔开，聊了半小时公司愿景。', '老板说下个季度再看看你的表现。', '老板说：“你看看外面多少人想进来。”', '老板答应给你换个好听点的头衔，钱没涨。'],
+  '老板答应给你加薪 12%。':['老板爽快地答应了，说早就想给你涨。', '你摆出了一年的业绩，老板当场就点了头。', '你拿着别家的offer去谈，老板马上给你涨了薪。', '老板想了一晚上，第二天答应了你。'],
+  '考试没过，明年再来。':['你差了三分，没过。', '考试那天你发烧了，脑子一片空白。', '题目比往年难多了，考场里一片哀嚎。', '你复习错了重点，考的全是没看过的。', '你在考场上睡着了，醒来只剩二十分钟。', '你忘了带准考证，连考场都没进去。', '你考完感觉很好，出成绩时才发现没过。', '你报了名，结果工作太忙，一本书都没看完。', '这个证的通过率只有百分之十，你不在那百分之十里。'],
+  '你戒了三天又抽上了。':['饭局上有人递烟，你没好意思不接。', '你嚼了一个月口香糖，最后还是没忍住。', '你一熬夜就想抽，越戒越想。', '你把烟藏起来，又半夜翻出来抽了一根。', '你改抽电子烟，结果抽得更多了。', '同事都在楼下抽烟聊天，你也跟着下去了。', '你戒了两周，脾气差到全家都怕你，最后还是抽上了。', '你买了戒烟贴，贴着贴着又点上了。'],
+  '你终于把烟戒掉了。':['你把最后一包烟扔进了垃圾桶，再也没买过。', '你戒烟一年后，爬楼梯都不喘了。', '你孩子画了一张“爸爸妈妈别抽烟”的画，你就戒了。', '医生的一句话把你吓住了，你从此再没碰过烟。', '你闻到烟味就开始反胃，这烟算是彻底戒了。'],
+  '你戒了一周，又在饭局上破了戒。':['领导敬的酒，你不敢不喝。', '你心情不好，又一个人喝了半瓶。', '你说只喝一杯，最后喝到了半夜。', '你把酒全倒了，第二天又买了新的。', '过年回家，亲戚一劝你就喝上了。', '你戒酒那几天睡不着，最后又拿起了酒杯。', '朋友结婚，你没能推掉敬酒。', '你喝的“无醇啤酒”越喝越多，最后换回了真的。'],
+  '你把家里的酒全倒进了下水道。':['你戒酒一年，脸色都变好了。', '你参加了戒酒互助会，第一次在会上说出了自己的名字。', '你醒来时看见孩子害怕的眼神，从此再也没喝过。', '你在饭局上端起了一杯茶，说“我不喝了”。'],
+  '你发誓不赌了，第二天又坐上了牌桌。':['你删了赌博软件，第二天又下载了回来。', '你说只玩最后一把，结果玩了一晚上。', '你戒了一个月，听说朋友赢了一大笔，你又心动了。', '你把银行卡交给家人保管，又偷偷办了一张。', '牌友给你打电话，你说“就一会儿”。', '你输了想翻本，赢了想再赢。', '你在梦里都在摸牌，醒来手还在抖。', '你戒赌那段时间特别烦躁，最后还是回去了。'],
+  '你删掉了所有牌友的联系方式。':['你主动去申请了赌场禁入，从此再没去过。', '你把欠的钱一笔一笔还清，再也不碰牌了。', '你发现戒赌后的日子很平淡，但很踏实。', '你找了份夜班的工作，再也没时间去赌了。'],
+  '你去了几次相亲，都没有下文。':['你在交友软件上聊了几个人，都无疾而终。', '你鼓起勇气表白，被发了好人卡。', '相亲对象一见面就问你有没有房。', '你和一个人聊得很好，见面后对方就不回消息了。', '朋友给你介绍了一个，你们吃了顿饭就没再联系。', '你喜欢的人，喜欢的是别人。', '你参加了一场联谊会，全程都在角落里吃东西。', '你在网上认识了一个人，结果是个卖保险的。', '你和对方约了三次，每次都被放了鸽子。'],
+  '投稿被退了回来，编辑说“还差一点”。':['出版社说现在的读者不爱看这种题材。', '你投了二十家出版社，只有一家回了信，说再改改。', '编辑说故事不错，但开头太慢了。', '你的稿子被压在编辑的抽屉里，一放就是一年。', '出版社倒闭了，你的稿子不知去向。', '编辑说要出也行，你得自费买两千本。', '退稿信上只有一行字：“不适合我社出版。”', '你把稿子发到网上，只有三个人看完了。'],
+  '你写了几万字。':['你熬夜写完了一个章节。', '你删掉了昨天写的全部内容，重新开始。', '你写了一整年，桌上堆满了草稿纸。', '你在咖啡馆写了一个下午，写得很顺。', '你卡在一个情节上，一个月没写出一个字。', '你把写好的章节念给朋友听，朋友听哭了。', '你写着写着，发现自己写的是自己的故事。', '你每天早上五点起来写一千字。', '你给小说想了一个新结局，激动得半夜爬起来写。'],
+  '你练了三天就放弃了。':['你买了一把吉他，挂在墙上落灰。', '你报了班，去了两次就不想去了。', '你练得手指都破了，还是弹不成调。', '邻居来敲门，说你太吵了，你就不练了。', '你看了一百个教学视频，一次都没跟着练。', '你练了一个月，发现自己真的没有这方面的天赋。'],
+  '你哭着不肯去兴趣班，课费白交了。':['你在兴趣班上一直哭，老师只好打电话叫家长。', '你去了两次，说老师太凶，再也不肯去了。', '你每次上课都在偷偷画画，什么也没学会。', '兴趣班倒闭了，学费没退回来。', '你上课时和小朋友打了一架，被劝退了。', '你学了一学期，汇报演出时忘了词，站在台上哭了。'],
+  '你在救助站吃了几顿热饭，洗了个澡。':['救助站的阿姨给你拿了一件厚棉袄。', '你在救助站睡了几个安稳觉，第一次没被冻醒。', '救助站的人帮你剪了头发，你对着镜子愣了好久。', '你在救助站认识了一个老乡，聊了一晚上家乡的事。', '救助站的饭不多，但是热的。', '工作人员问你家在哪，你说不记得了。', '你在救助站洗了个热水澡，搓下来一层泥。', '救助站人太多，你只领到了一碗粥。', '志愿者给你送了一双新鞋，你舍不得穿。'],
+  '这一年没有怀上。':['你们试了一整年，验孕棒上始终只有一条线。', '医生说你们都没问题，再放松一点。', '你们去了好几家医院，花了不少钱，还是没有消息。', '每个月等结果的那几天，你们都很紧张。', '长辈天天催，你们压力大得睡不着。', '你们决定顺其自然，不再刻意去想。'],
+};
 
 /* ---------- 天空：随年龄从清晨走到黄昏，去世后入夜；流浪下雨，坐牢阴冷，出家山雾 ---------- */
 /* 每组颜色：[天顶, 天腰, 地平线, 远山, 近山, 日月] */
