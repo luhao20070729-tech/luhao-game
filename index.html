@@ -2085,6 +2085,7 @@ const ACTS = [
     const k = S.kids.find(k => !k.dead && S.age - k.b < 25);
     if (k) opts.push([`你陪${k.n}去了趟动物园。`, k]);
     if (S.grand) opts.push(['你带着孙辈去公园喂鸽子。']);
+    if (!opts.length) opts.push(['你一个人在家，翻了一下午的老照片。']);
     const [t, kid] = pick(opts);
     if (kid) kid.bond = (kid.bond || 0) + 1;
     L(t, 'g', {happy:R(2, 5), stress:-3});
@@ -5336,6 +5337,7 @@ function extraTick(){
   petTick();
   if (S.alive) affairTick();
   if (S.alive) debtPressure();
+  if (S.alive) specialEvent();
   if (S.alive){
     const col = (S.items || []).filter(x => !x.got && !x.fake && ['vase','painting','liquor','goldbar','jet','yacht'].includes(x.k)).length;
     if (col >= 3) unlock('collector');
@@ -5519,7 +5521,7 @@ const VARY = {
   娱乐放松:['g|3|你和朋友们去唱了通宵K。|happy:3~7,stress:-8~-4,cost:500~2000', 'g|2|你追完了一部八十集的剧。|happy:3~6,stress:-8~-4', 'g|1|你在游乐园玩了一整天。|happy:3~7,stress:-8~-4,cost:500~1500', 'g|1|你和朋友去露营看星星。|happy:4~7,stress:-8~-4,cost:800~2000', 'g|1|你去看了一场脱口秀，笑得肚子疼。|happy:4~6,stress:-6,cost:300~800', 'g|1|你们去玩了密室逃脱，被吓得尖叫。|happy:3~6,stress:-4,cost:300~800', 'n|1|你约朋友出去，结果大家都在低头玩手机。|happy:0~1,cost:200~600', 'b|1|你坐过山车坐吐了。|happy:-1,health:-1,cost:500~1000', 'b|1|你出去玩，手机被偷了。|happy:-5,cost:2000~5000', 'n|1|周末人山人海，你排了一天队，只玩了两个项目。|happy:1,stress:2,cost:500~1000', 'e|1|你在音乐节上被乐队拉上台合唱了一首歌。|happy:8,stress:-6'],
   夜生活:['b|1|你夜夜泡在酒吧，慢慢离不开酒了。|happy:4,health:-3,cost:5000,@drunk|sober', 'g|1|你在酒吧认识了{新人}，你们在一起了。|happy:8,cost:3000,@meet|single', 'n|2|你在酒吧蹦到凌晨三点。|happy:3~7,health:-2,stress:-5,cost:1000~5000', 'n|2|你喝多了，在出租车上吐了一地。|happy:2~4,health:-2,stress:-4,cost:1000~3000', 'g|1|你在 livehouse 听了一晚上现场，嗓子都喊哑了。|happy:4~7,stress:-6,cost:500~1500', 'g|1|你们在大排档撸串喝啤酒，聊到了天亮。|happy:3~6,stress:-6,cost:300~1000', 'b|1|你在夜店和人起了冲突，被打破了头。|health:-5,happy:-4,cost:2000~5000', 'b|1|你喝断片了，醒来发现钱包和手机都没了。|happy:-5,cost:3000~8000', 'b|1|你喝了酒还开车，被交警拦下，驾照被吊销了。|happy:-6,stress:8,cost:5000', 'n|1|你在酒吧坐了一晚上，越喝越孤单。|happy:-2,stress:-2,cost:1000~3000', 'e|1|你在酒吧和一个陌生人聊了一夜，第二天才知道对方是个大老板，还给了你一张名片。|happy:5,stress:-4'],
   陪伴伴侣:['g|3|你和{伴}出去度了个周末。|happy:2~5,stress:-3,cost:500~2000', 'g|2|你给{伴}做了一桌菜。|happy:2~5,stress:-3,cost:200~500', 'g|2|你和{伴}窝在沙发上看了一晚上电影。|happy:2~5,stress:-3', 'g|1|你和{伴}去拍了一组合照，挂在了客厅。|happy:3~5,cost:1000~3000', 'g|1|你记住了{伴}随口提过的一件小事，给了TA一个惊喜。|happy:4~6', 'g|1|你和{伴}散步散到很晚，说了很多以前没说过的话。|happy:3~6,stress:-4', 'n|1|你们待在一起，却各自刷着手机。|happy:0~1', 'b|1|你们为了谁洗碗吵了一架，冷战了三天。|happy:-4,stress:4', 'b|1|你忘了你们的纪念日，{伴}一整天没理你。|happy:-4,stress:3', 'n|1|{伴}最近工作很忙，你们一个月只吃了两顿饭。|happy:-1', 'e|1|你和{伴}去看了极光，TA在光下面哭了。|happy:8,stress:-6,cost:20000~40000|adult'],
-  陪伴家人:['g|3|你回家陪爸妈吃了顿饭，听他们唠叨了一晚上。|happy:2~5,stress:-3|par', 'g|1|你陪爸妈去体检，他们嘴上嫌你多事，心里很高兴。|happy:3~5,stress:-2|par', 'g|1|你教爸妈用智能手机，教了十遍他们还是学不会。|happy:2~4,stress:1|par', 'g|1|你带爸妈出去旅游了一趟，他们拍了几百张照片。|happy:4~6,cost:3000~8000|par', 'b|1|你回家和爸妈吵了一架，为的还是那几件老事。|happy:-3,stress:4|par', 'g|3|你陪{孩}去了趟动物园。|happy:2~5,stress:-3,@bond|kidy', 'g|1|你陪{孩}拼了一整天乐高。|happy:2~5,stress:-3,@bond|kidy', 'g|1|你去看了{孩}的学校演出，在台下拼命鼓掌。|happy:3~6,@bond|kidy', 'b|1|你陪{孩}写作业，没忍住吼了TA一顿。|happy:-2,stress:4|kidy', 'g|2|你带着孙辈去公园喂鸽子。|happy:2~5,stress:-3|grand', 'g|1|孙辈抱着你的腿不让你走。|happy:4~6|grand', 'e|1|一家人难得聚齐了，你们拍了一张全家福。|happy:7,stress:-4|par'],
+  陪伴家人:['g|3|你回家陪爸妈吃了顿饭，听他们唠叨了一晚上。|happy:2~5,stress:-3|par', 'g|1|你陪爸妈去体检，他们嘴上嫌你多事，心里很高兴。|happy:3~5,stress:-2|par', 'g|1|你教爸妈用智能手机，教了十遍他们还是学不会。|happy:2~4,stress:1|par', 'g|1|你带爸妈出去旅游了一趟，他们拍了几百张照片。|happy:4~6,cost:3000~8000|par', 'b|1|你回家和爸妈吵了一架，为的还是那几件老事。|happy:-3,stress:4|par', 'g|3|你陪{孩}去了趟动物园。|happy:2~5,stress:-3,@bond|kidy', 'g|1|你陪{孩}拼了一整天乐高。|happy:2~5,stress:-3,@bond|kidy', 'g|1|你去看了{孩}的学校演出，在台下拼命鼓掌。|happy:3~6,@bond|kidy', 'b|1|你陪{孩}写作业，没忍住吼了TA一顿。|happy:-2,stress:4|kidy', 'g|2|你去{儿女}家住了几天，TA天天变着花样给你做饭。|happy:2~5,stress:-2|kidsold', 'g|1|{儿女}请了年假，带你出去玩了一趟。|happy:4~6|kidsold', 'n|1|你给{儿女}打电话，聊了几句TA就说要去忙了。|happy:0~1|kidsold', 'b|1|你和{儿女}因为一点小事吵了起来，不欢而散。|happy:-3,stress:3|kidsold', 'g|1|{儿女}陪你去医院做了个体检，一路扶着你。|happy:3~5|kidsold', 'g|2|你带着孙辈去公园喂鸽子。|happy:2~5,stress:-3|grand', 'g|1|孙辈抱着你的腿不让你走。|happy:4~6|grand', 'e|1|一家人难得聚齐了，你们拍了一张全家福。|happy:7,stress:-4|par'],
   辅导孩子:['g|3|你陪{学}写完了作业，还讲了两道难题。|stress:2,happy:2,@tutor', 'g|1|你和{学}一起做手工作业，做到半夜。|stress:3,happy:3,@tutor', 'g|1|{学}的成绩进步了，老师在家长群里点名表扬。|happy:5,@tutor', 'g|1|你给{学}讲题，讲着讲着自己也学到了新东西。|smarts:0~1,happy:2,@tutor', 'b|2|你辅导{学}写作业，气得血压飙升。|stress:8,health:-1,@tutor', 'b|1|你给{学}讲错了一道题，被老师在作业本上批了出来。|happy:-2,stress:3', 'b|1|{学}哭着说“你根本不懂”，摔门进了房间。|happy:-4,stress:5', 'n|1|你在旁边陪着，{学}一直在玩铅笔。|stress:3,@tutor', 'n|1|你看不懂{学}的数学题了，只好在网上搜。|stress:2', 'e|1|{学}在你的辅导下拿了数学竞赛的奖。|happy:7,@tutor,@tutor'],
   晨练遛弯:['g|3|你每天早上在公园打太极。|health:G1-3,stress:-2', 'g|2|你沿着河边走了一万步。|health:G1-3,stress:-2', 'g|1|你加入了晨跑队，跑得比年轻人还快。|health:G1-3,happy:3', 'g|1|你每天早上去爬山，认识了一群老伙伴。|health:G1-3,happy:3', 'g|1|你在公园学会了抖空竹。|health:G1-3,happy:3', 'z|2|外面太冷，你又缩回了被窝。|', 'n|1|你走了几步就腿疼，坐在长椅上看别人锻炼。|stress:-1', 'b|1|你晨练时着了凉，咳嗽了一个月。|health:-2', 'b|1||@fall', 'e|1|你坚持晨练十年如一日，被社区评为“健康老人”。|health:G2-4,happy:6'],
   广场舞:['g|3|你在广场舞队里当上了领舞。|happy:2~5,health:0~2', 'g|2|你们广场舞队去参加了区里的比赛。|happy:2~5,health:0~2', 'g|1|你学会了一支新舞，回家跳给老伴看。|happy:3~5', 'g|1|你们队拿了比赛第一名，奖品是一桶油。|happy:5', 'n|1|你们和隔壁队抢地盘，吵了一晚上。|happy:-1,stress:3', 'b|1|楼上的年轻人嫌你们吵，往下泼了一盆水。|happy:-4', 'b|1|你跳舞扭了腰，休息了半个月。|health:-3', 'n|1|你跳了一年，还是记不住动作。|happy:1', 'g|1|你在舞队里认识了几个聊得来的老伙伴。|happy:4', 'e|1|你们跳广场舞的视频被传到网上，播放量过了百万。|happy:7'],
@@ -5552,7 +5554,7 @@ const VARY = {
 };
 const VCOND = {
   adult:() => S.age >= 18, minor:() => S.age < 18, single:() => !S.partner, single18:() => !S.partner && S.age >= 18,
-  par:() => parentsAlive(), kidy:() => S.kids.some(k => !k.dead && S.age - k.b < 25), grand:() => S.grand > 0,
+  par:() => parentsAlive(), kidy:() => S.kids.some(k => !k.dead && S.age - k.b < 25), grand:() => S.grand > 0, kidsold:() => S.kids.some(k => !k.dead && S.age - k.b >= 25),
   fam:() => parentsAlive() || S.kids.some(k => !k.dead), nofam:() => !parentsAlive() && !S.kids.some(k => !k.dead),
   poor:() => tier() === 0, poorish:() => tier() <= 1, calm:() => S.st.stress < 80, frazzled:() => S.st.stress >= 80,
   sober:() => !S.flags.drunkard, canreduce:() => S.jail > 1,
@@ -5605,14 +5607,15 @@ function vparse(label){
   return list;
 }
 function vfill(t){
-  const P = S.partner, A = S.affair, k = S.kids.find(k => !k.dead && S.age - k.b < 25), ks = kidOfAge(6, 17);
-  return t.replace(/\{伴\}/g, P ? P.name : '家里那位').replace(/\{情\}/g, A ? A.n : 'TA').replace(/\{孩\}/g, k ? k.n : '孩子').replace(/\{学\}/g, ks ? ks.n : '孩子')
+  const P = S.partner, A = S.affair, k = S.kids.find(k => !k.dead && S.age - k.b < 25), ks = kidOfAge(6, 17), ko = S.kids.find(k => !k.dead && S.age - k.b >= 25);
+  return t.replace(/\{伴\}/g, P ? P.name : '家里那位').replace(/\{儿女\}/g, ko ? ko.n : '孩子').replace(/\{情\}/g, A ? A.n : 'TA').replace(/\{孩\}/g, k ? k.n : '孩子').replace(/\{学\}/g, ks ? ks.n : '孩子')
     .replace(/\{宠\}/g, VX.pet ? VX.pet.n : '它').replace(/\{新人\}/g, VX.newName || '').replace(/\{钱\}/g, fmt(VX.pocket || 0)).replace(/\{物\}/g, VX.item || '')
     .replace(/\{大钱\}/g, fmt(VX.big || 0)).replace(/\{祖\}/g, S.gender === 'm' ? '爷爷' : '奶奶');
 }
 function wpickBy(list){ let r = Math.random() * list.reduce((s, o) => s + o.w, 0); for (const o of list){ r -= o.w; if (r <= 0) return o; } return list[list.length - 1]; }
+let VNAME = null;   // 事件里已经出现过名字的人，结果里要用同一个名字
 function varyRun(a){
-  VX = {newName:randName(other())};
+  VX = {newName:VNAME || randName(other())};
   if (VPRE[a.l]) VPRE[a.l]();
   const ok = vparse(a.l).filter(o => o.c.every(c => VCOND[c] && VCOND[c]()));
   if (!ok.length){ a.f(); return; }
@@ -5773,6 +5776,125 @@ evSet('h_kind', () => vrun('ev:hkind'));
 evSet('h_cold', () => vrun('ev:hcold'));
 evSet('j_visit', () => vrun('ev:jvisit'));
 evSet('novisit', () => vrun('ev:novisit'));
+
+/* ---------- 更有戏剧性的特殊事件：一辈子最多遇到一次，一局大概能碰上两三个 ---------- */
+Object.assign(VCOND, {smart:() => S.st.smarts >= 60, pretty:() => S.st.looks >= 60, notsmart:() => S.st.smarts < 60});
+Object.assign(VFX, {
+  scamfx:fx => { if (fx.money < 0) scam(-fx.money); },
+});
+Object.assign(VHOOK, {
+  nRelative:() => node('亲', '和失散的亲人相认', '你们对着彼此看了很久，眉眼真的很像。'),
+  nInherit:() => node('遗', '继承了一笔遗产', '你对那位亲戚的印象，只剩下小时候的一个红包。'),
+  inheritHouse:() => { S.assets.houses.push({n:'继承的老房子', v:R(30, 120) * 10000, debt:0, pay:0, i:0, a:S.age, s:R(1, 1e9)}); },
+  inheritCat:() => { if (pets().length < 4){ const p = getPet(pick([9, 10, ...PETS.map((P, k) => P.kind === 'cat' && P.stray ? k : -1).filter(k => k >= 0)]), 'adopt'); p.age = R(6, 12); p.die = Math.max(p.age + 2, p.die); } },
+  inheritVase:() => { S.items.push({k:'vase', i:0, n:'祖传的青花瓷瓶', v:R(5, 60) * 10000, a:S.age, s:R(1, 1e9), r:1.02}); },
+  nRelic:() => node('宝', '挖出了文物', '博物馆的展柜里，写着你的名字。'),
+  relicKeep:() => { S.items.push({k:'vase', i:0, n:'出土的古陶罐', v:R(5, 40) * 10000, a:S.age, s:R(1, 1e9), r:1.03}); },
+  relicJail:() => goJail(R(2, 5), '你私自倒卖出土文物的事被查了出来，以倒卖文物罪被判刑。'),
+  nLanding:() => { unlock('disaster'); node('生', '飞机迫降，大难不死', '走下飞机的那一刻，你给家里打了个电话，什么也没说出来。'); },
+  nPatent:() => node('创', '发明被大公司买下', '合同签完那天，你在楼下的小饭馆吃了一碗面。'),
+  nTorch:() => node('炬', '当上了火炬手', '你举着火炬跑过家乡的大街，两边都是人。'),
+  nBigshot:() => node('缘', '好心有好报', '那天你只是顺手扶了一把。'),
+  firstAffair:() => { if (isMarried() && !S.affair) S.affair = {n:VX.newName, yrs:0}; },
+  firstTogether:() => { if (!S.partner) setPartner(VX.newName); },
+  jobOffer:() => { if (S.job){ S.job.pay = Math.round(S.job.pay * 1.5); S.job.perf += 2; } else if (S.age < 60) setJob('行政主管', R(15, 30) * 10000); },
+  famous:() => { S.flags.famous = (S.flags.famous || 0) + 1; },
+});
+Object.assign(VARY, {
+  // 1. 失散的亲人
+  'sp:rel1':['g|2|你们抱头痛哭。原来当年家里穷，{TA}被送给了别人，这些年一直在找你们。|happy:12,@nRelative', 'e|.5|对方开着豪车来的。{TA}这些年在外面做生意发了财，硬塞给你一张卡。|earn:500000~3000000,happy:12,@nRelative', 'g|1|你们一起回了老家，在长辈的坟前磕了头。|happy:8,stress:-4,@nRelative', 'b|1|相认没多久，{TA}就开口找你借钱，说是要做生意。|cost:30000~200000,happy:-6,stress:6|adult', 'b|1|对方是个骗子，研究了你家的情况很久。等你发现时，已经转出去好几万。|cost:20000~100000,happy:-10,stress:8,@scamfx|adult', 'n|1|相认之后，你们发现彼此其实没什么话说，过年互相发个红包。|happy:2', 'g|1|{TA}带着一大家子人来看你，你家的客厅一下子挤满了亲戚。|happy:8', 'b|1|你认了亲，家里其他人却觉得{TA}是冲着家产来的，吵成了一团。|happy:-4,stress:6', 'n|1|你们相认的那段视频被寻亲节目播了出去，好多人在底下留言说哭了。|happy:6'],
+  'sp:rel2':['g|2|鉴定结果出来了，是真的。你们在医院走廊里抱在了一起。|happy:12,cost:3000,@nRelative', 'g|1|鉴定是真的。对方说早就知道，只是想让你放心。|happy:10,cost:3000,@nRelative', 'b|2|鉴定结果显示没有血缘关系。对方拿了路费，就再也联系不上了。|happy:-4,cost:3000', 'g|1|你坚持要做鉴定，骗子当场就慌了，转身就跑。你躲过了一劫。|happy:4,stress:-2', 'n|1|鉴定是真的，可对方说只想知道答案，不想打扰你的生活。|happy:2,cost:3000', 'b|1|你要做鉴定，对方觉得受了侮辱，从此不再联系。后来你才知道，{TA}真是你的亲人。|happy:-8,stress:4', 'e|.5|鉴定是真的。{TA}一直在找你，这些年在国外过得很好，非要接你过去住一阵子。|happy:12,earn:100000~500000,@nRelative', 'n|1|结果出来是远房亲戚，算起来要叫一声表叔。|happy:3,cost:3000'],
+  'sp:rel0':['n|2|你说不用了，过去的事就让它过去吧。|', 'b|1|对方在门口站了很久，最后留下一包老家的特产走了。你后悔了好几天。|happy:-4', 'n|1|你没见，但收下了对方留的电话，一直没打。|stress:2', 'b|1|几年后你听说，那个人前不久去世了。|happy:-6', 'g|1|你后来想通了，主动打了那个电话。|happy:5', 'n|1|家里人都劝你别见，说现在骗子太多。|', 'n|1|你把这件事告诉了爸妈，他们沉默了很久。|stress:2|par', 'g|1|你觉得现在的家人就是最好的家人。|happy:2'],
+  // 2. 遗产
+  'sp:inh1':['g|2|你继承了一笔存款。|earn:100000~800000,happy:8,@nInherit', 'e|.4|遗产比你想象的多得多：好几套房子和一大笔存款。|earn:3000000~10000000,happy:15,@nInherit', 'g|1|你继承了老家的一栋老房子，院子里还有一棵枣树。|happy:6,@inheritHouse,@nInherit', 'g|1|遗产里有一只青花瓷瓶，据说是祖上传下来的。|happy:5,@inheritVase', 'g|1|遗产只有一只老猫，律师说老人最放心不下的就是它。|happy:5,@inheritCat', 'b|1|一大群亲戚冒了出来，说遗产也有他们的份，你们打了两年官司。|earn:50000~300000,cost:30000~80000,stress:12,happy:-4', 'n|1|遗产扣掉老人欠的债，什么也没剩下，只剩一箱旧照片。|happy:1', 'g|1|遗产里有一本日记，你才知道这位亲戚一直默默关注着你。|happy:6,earn:50000~200000', 'b|1|你继承的是一家快倒闭的小厂，接手后还倒贴了不少钱。|cost:50000~200000,stress:8|adult'],
+  'sp:inh0':['n|2|你签了放弃继承的文件，觉得无功不受禄。|', 'g|1|后来你才知道，那笔遗产背着一屁股债，放弃是对的。|happy:3,stress:-2', 'b|1|后来你听说，那份遗产里有好几套房子，全归了别人。|happy:-6', 'n|1|你只要了一张老人年轻时的照片。|happy:2', 'g|1|你把遗产转捐给了老人生前住的养老院。|happy:6', 'n|1|几个亲戚为了遗产吵得不可开交，你庆幸自己没掺和。|happy:1', 'b|1|家里人知道你放弃了遗产，骂你傻。|happy:-3,stress:3', 'n|1|你连那位亲戚长什么样都想不起来，实在不好意思要。|'],
+  // 3. 旧物里的惊喜
+  'sp:old1':['g|2|信封里是一沓旧钱，你数了数，有好几千。|earn:2000~9000,happy:5', 'e|.4|夹着的是一套民国时期的邮票，拍卖行说值不少钱。|earn:100000~600000,happy:10', 'g|1|里面是一封几十年前的情书，字写得很工整，你看了一晚上。|happy:4', 'n|1|里面是一张过期了二十年的彩票，你对了对号码——中过二等奖。|happy:-2', 'g|1|里面夹着一张老照片，照片上的年轻人，竟然是你爸妈。|happy:8|par', 'n|1|里面是一张欠条，借款人早就不知道去哪了。|', 'b|1|你打开信封，里面是一堆灰。你打了个喷嚏，过敏了好几天。|health:-1', 'g|1|里面是一张手绘的地图，你照着找过去，挖出了一个装满玻璃弹珠的铁盒。|happy:5', 'n|1|里面是一页日记，写着：“如果有人看到这个，希望你今天过得开心。”|happy:3'],
+  'sp:old2':['g|2|你找到了卖家，那是一位老太太的遗物。她的女儿哭着跟你道谢。|happy:7', 'g|1|卖家坚持要分一半给你，说这是缘分。|earn:1000~5000,happy:5', 'n|1|卖家说不要了，随你处理。|happy:1', 'g|1|原主人是个老教授，他请你吃了顿饭，后来成了你的忘年交。|happy:6,smarts:0~2', 'n|1|你找了一圈都没找到卖家，只好交给了派出所。|happy:2', 'g|1|这件事被本地新闻报道了，标题是《旧书里的善意》。|happy:6', 'b|1|卖家说里面本来有一万，你只还了五千，非要你补上。|happy:-5,stress:5', 'g|1|你把东西还了回去，那天晚上睡得特别踏实。|stress:-3,happy:2'],
+  // 4. 挖到文物
+  'sp:relic1':['g|2|文物部门派人来鉴定，说是汉代的。你拿到了一面锦旗和一笔奖金。|earn:5000~50000,happy:8,@nRelic', 'g|1|你上交的那件玉器，现在摆在省博物馆的展柜里。|happy:10,@nRelic', 'g|1|考古队在你家附近挖了三个月，挖出了一整座古墓。|happy:6,earn:10000~30000', 'n|1|专家来看了看，说是清末的普通瓦罐，不值什么钱。|happy:-1', 'b|1|考古队一来就是半年，你家的房子没法动工，只能先租房住。|cost:10000~30000,stress:6|adult', 'n|1|你上了本地新闻，村里人都叫你“挖宝人”。|happy:4', 'g|1|你把文物交了上去，领导亲自来给你发奖状。|happy:6,earn:5000~20000', 'b|1|有人眼红，说你肯定偷偷藏了好东西，天天在你家门口转。|stress:6'],
+  'sp:relic2':['g|2|你托人找了个买家，换了一大笔钱。你一直担心哪天会有人敲门。|earn:50000~500000,stress:12', 'b|.8||@relicJail', 'b|1|买家是个骗子，东西拿走了，钱一分没给。|happy:-8,stress:6', 'n|1|你拿去古玩市场，人家说是假的，给了两百块。|earn:200,happy:-2', 'b|1|你卖完没几天，警察就找上门了，钱被全部追缴，还罚了款。|cost:20000~80000,happy:-8,stress:10|adult', 'g|1|你卖了个好价钱，买家说要捐给海外的博物馆。|earn:100000~300000,stress:8'],
+  'sp:relic3':['n|2|你把它藏在床底下，每天睡前都要看一眼。|happy:2,stress:3,@relicKeep', 'b|1|有人举报了你，文物部门上门收走了它，还批评教育了一番。|happy:-4,stress:4', 'g|1|你把它摆在客厅里，来家里的客人都要问上几句。|happy:4,@relicKeep', 'n|1|你查了很多资料，越来越确定它是个宝贝。|smarts:0~2,@relicKeep', 'b|1|你保管不当，它裂了一道缝。|happy:-4,@relicKeep', 'n|1|你犹豫了很久，最后还是把它交了上去。|happy:3,@nRelic'],
+  // 5. 被认成明星
+  'sp:star1':['g|2|你签了一下午的名，还和几十个人合了影。回家的路上你都在笑。|happy:6', 'g|1|你被拉进一家饭店，老板说“明星吃饭不要钱”。|happy:5', 'b|1|有个粉丝认出你是假的，在网上发帖骂你“蹭热度”。|happy:-5,stress:5', 'n|1|那个明星的经纪人找上门来，警告你不要再冒充。|stress:4', 'g|1|一个广告公司看中了你，请你去拍了一组“明星同款”的广告。|earn:20000~100000,happy:6,@famous', 'b|1|一群粉丝追着你不放，你躲进商场厕所里才脱身。|stress:5,happy:-1', 'g|1|你在一个小孩的本子上签了名，那个孩子开心得跳了起来。你突然觉得也挺好。|happy:4', 'n|1|后来那个明星塌房了，你走在路上被人指指点点。|happy:-3,stress:3'],
+  'sp:star2':['n|2|你解释了半天，大家失望地散了。|', 'g|1|大家听说认错了人，哈哈大笑，还是有人要和你合影。|happy:3', 'n|1|有人不信，说你是在“微服私访”。|happy:2', 'g|1|你大方地说了句“我不是他，但谢谢喜欢”，被人拍下来发到了网上，还挺受欢迎。|happy:4', 'b|1|有人以为你在耍大牌，骂了你几句。|happy:-2', 'n|1|你从此出门都戴着帽子和口罩。|stress:1'],
+  'sp:star3':['e|.6|视频火了，播放量过了一千万，好几家公司找你签约。|happy:10,earn:50000~300000,@famous', 'g|2|视频小火了一把，你的粉丝涨了好几万。|happy:6,@famous', 'n|1|视频没什么人看，只有几个朋友点了赞。|', 'b|1|那个明星的粉丝冲进你的评论区骂了三天三夜。|happy:-6,stress:6', 'g|1|那个明星本人转发了你的视频，还说“我们像双胞胎”。|happy:8,@famous', 'b|1|有人扒出了你的家庭住址，你吓得搬了家。|stress:8,cost:5000~20000|adult'],
+  // 6. 上电视
+  'sp:tv1':['g|2|你在节目上和{新人}牵手成功，节目播出那天，全家人都守在电视机前。|happy:10,@firstTogether', 'b|2|你一上台，二十四盏灯全灭了。|happy:-6,stress:4', 'g|1|你没牵手成功，但节目播出后，好多人私信你。|happy:5,@famous', 'b|1|你在节目上说错了话，被网友截图骂上了热搜。|happy:-8,stress:8', 'n|1|你在台上紧张得说不出话，主持人帮你打了半天圆场。|stress:3', 'g|1|你和{新人}在后台聊得比台上还投机，后来私下在一起了。|happy:8,@firstTogether', 'n|1|你的片段被剪得只剩十秒钟。|', 'g|1|你在节目上唱了一首歌，全场都在鼓掌。|happy:6,@famous'],
+  'sp:tv2':['g|2|你一路答到了最后一关，拿走了奖金。|earn:50000~200000,happy:10|smart', 'e|.5|你在节目上一战成名，被称为“最强大脑”。|earn:100000~500000,happy:12,@famous|smart', 'b|2|你第一题就答错了，被请下了台。|happy:-4|notsmart', 'n|1|你答到一半，卡在了一道历史题上，拿了个参与奖。|earn:1000~5000,happy:1', 'b|1|你在台上大脑一片空白，连自己的名字都差点说错。|happy:-5,stress:5', 'g|1|你没拿到大奖，但你的冷笑话让你成了节目的“笑点担当”。|happy:5,@famous', 'n|1|节目录了一整天，播出来你只有三个镜头。|', 'g|1|你拿了个小奖，奖品是一台洗衣机。|happy:4'],
+  'sp:tv0':['n|2|你说上电视太紧张，推掉了。|', 'n|1|后来你在电视上看到了那期节目，心想自己上去也不一定比他们好。|', 'b|1|朋友替你去了，结果在节目上火了。|happy:-3', 'g|1|你觉得平平淡淡挺好。|stress:-1', 'n|1|你点开报名表，又关上了。|', 'n|1|你说下次一定，然后就没有下次了。|'],
+  // 7. 飞机迫降
+  'sp:land':['g|2|飞机重重地落在了跑道上，全机的人都鼓起了掌。你这才发现自己一直在抖。|stress:10,happy:6,@nLanding', 'b|1|迫降时你撞到了头，缝了好几针，好在没什么大事。|health:-8,stress:10,@nLanding', 'n|1|落地之后很长一段时间，你都不敢再坐飞机。|stress:15,@nLanding', 'g|1|落地后你第一件事就是给家里人打电话，说了很多以前不好意思说的话。|happy:10,stress:4,@nLanding', 'g|1|你在逃生滑梯上扭伤了脚，可你一点也不在乎——活着就好。|health:-3,happy:8,@nLanding', 'n|1|航空公司赔了你一笔钱，你把它存了起来，没舍得花。|earn:5000~30000,stress:8,@nLanding', 'g|1|从那以后，你觉得每一天都是赚来的，活得比以前开心多了。|happy:12,stress:-6,@nLanding', 'b|1|你从那以后开始失眠，一闭眼就是飞机往下掉的感觉。|stress:15,health:-2,@nLanding', 'g|1|迫降时你一直握着旁边一个陌生人的手。后来你们成了朋友。|happy:8,stress:6,@nLanding'],
+  // 8. 发明
+  'sp:pat1':['e|.6|一家大公司买下了你的专利，开价让你不敢相信。|earn:1000000~5000000,happy:15,@nPatent', 'g|2|你和一家公司签了合作，每年都能拿到一笔专利费。|earn:50000~200000,happy:8', 'b|2|你把方案发给了一家公司，对方说不感兴趣。半年后，他们推出了一模一样的产品。|happy:-8,stress:8', 'n|1|专利申请了一年才批下来，等批下来的时候，已经有人做出了更好的东西。|happy:-2,cost:5000|adult', 'g|1|你申请到了专利，挂在墙上，每次看见都很骄傲。|happy:5,cost:3000|adult', 'b|1|你被一个“专利代理”骗了好几万，专利也没申请下来。|cost:20000~60000,happy:-6,@scamfx|adult', 'g|1|你的发明拿了一个创新比赛的奖。|earn:10000~50000,happy:6', 'n|1|几家公司都说想法不错，但是太超前了。|'],
+  'sp:pat2':['g|2|你在网上卖你的发明，卖得还不错。|earn:30000~150000,happy:6,stress:4', 'e|.5|你的小发明成了爆款，你干脆开了家公司。|earn:500000~2000000,happy:12,@nPatent', 'b|2|你做了一千个，只卖出去五十个。剩下的堆满了客厅。|cost:20000~60000,happy:-5|adult', 'b|1|产品出了质量问题，被消费者投诉，赔了一笔钱。|cost:10000~50000,stress:6|adult', 'n|1|你的产品被人仿了，比你便宜一半。|happy:-3,stress:4', 'g|1|一个老客户写信给你，说你的发明帮了他大忙。|happy:6', 'n|1|你忙活了一年，算下来不赚也不赔。|stress:3'],
+  'sp:pat3':['g|2|你把设计图公开在网上，好多人照着做，还给你留言道谢。|happy:6', 'n|1|有人拿你的设计去卖钱，赚了不少，你也说不上什么。|happy:-2', 'g|1|你的设计被一个公益组织拿去，用在了山区学校里。|happy:8', 'g|1|一家公司看了你的设计，邀请你去当工程师。|happy:5,@jobOffer', 'n|1|没什么人注意到，你也不在乎。|', 'g|1|你在网上收获了一群志同道合的朋友。|happy:4'],
+  // 9. 火炬手
+  'sp:torch1':['g|2|你举着火炬跑完了属于你的那一百米，两边的人都在为你欢呼。|happy:12,@nTorch', 'g|1|家里人举着横幅在路边等你，你跑过去的时候，妈妈哭了。|happy:12,@nTorch|par', 'g|1|你跑得太激动，差点把火炬举歪了，好在稳住了。|happy:10,@nTorch', 'n|1|那天下着大雨，你浑身湿透，火炬却一直没灭。|happy:10,health:-1,@nTorch', 'g|1|你把那支火炬带回了家，摆在了客厅最显眼的地方。|happy:10,@nTorch', 'g|1|你跑完后，好多小朋友围着你要合影。|happy:10,@nTorch'],
+  'sp:torch0':['g|2|你说还有更合适的人，把名额让给了一位残疾运动员。|happy:6', 'n|1|你说身体不太好，跑不动了。|', 'g|1|你把名额让给了带过你的老师，老师跑完来抱了抱你。|happy:7', 'n|1|你在电视上看着别人跑，心里有点羡慕。|happy:-1', 'g|1|你让出了名额，被人夸“高风亮节”，你有点不好意思。|happy:3', 'n|1|你那天正好出差，只能遗憾地放弃。|happy:-2'],
+  // 10. 扶起摔倒的老人
+  'sp:big1':['e|.6|老人的儿子找到了你，原来他是一家大公司的董事长，非要请你去他公司上班。|happy:10,@jobOffer,@nBigshot', 'g|2|老人的家人送来一面锦旗，上面写着“见义勇为”。|happy:6', 'b|1|老人的家属一口咬定是你撞的，要你赔医药费。你们打了一年官司。|cost:10000~50000,happy:-10,stress:12|adult', 'g|1|老人出院后，常常给你打电话聊天，你们成了忘年交。|happy:6', 'e|.5|老人去世后，律师找到了你：他在遗嘱里给你留了一笔钱。|earn:200000~1000000,happy:10,@nBigshot', 'g|1|路边的监控拍下了这一幕，你上了本地新闻。|happy:5', 'n|1|老人的家人连句谢谢都没说，接走老人就走了。|happy:-2', 'g|1|老人原来是个退休老教授，后来给了你很多人生建议。|smarts:1~3,happy:4'],
+  'sp:big2':['g|2|你把老人送到医院，没留名字就走了。那天你心情特别好。|happy:5', 'n|1|后来医院贴出了一张寻人启事，找那天送老人来的好心人。你没去。|happy:3', 'g|1|一个路人拍下了你扶老人的照片发到网上，好多人在找你。|happy:5', 'n|1|你走了以后，一直惦记着那个老人有没有事。|stress:2', 'g|1|很多年后，你在报纸上看到了那个老人的照片。他在采访里说，一直想找到那个年轻人。|happy:6', 'n|1|你做了好事，却没人知道，你也觉得挺好。|happy:2'],
+  'sp:big0':['b|2|你犹豫了一下，走开了。后来听说，老人在路边躺了很久才被人发现。|happy:-6,stress:4', 'n|1|你帮忙打了 120，站在远处看着，等救护车来了才走。|happy:1', 'b|1|你走开了，可那个画面在你脑子里转了好几天。|happy:-4,stress:3', 'n|1|旁边已经有人去扶了，你松了口气。|', 'g|1|你走了几步又折回来，最后还是把老人扶了起来。|happy:4', 'n|1|你拍了个视频发到了社区群里，很快就有人赶了过来。|'],
+  // 11. 偶遇初恋
+  'sp:fl1':['n|2|你们站在路边聊了很久，聊当年的同学，聊现在的生活。分开的时候，你们都说“保重”。|happy:4', 'g|1|对方还是单身，你也是。你们约了第二次见面，第三次……后来就在一起了。|happy:12,@firstTogether|single', 'b|1|你们越聊越投机，后来开始偷偷联系。|happy:6,stress:6,@firstAffair|married', 'n|1|对方已经儿女成群，手机里全是孩子的照片。|happy:1', 'b|1|你才知道，当年对方也喜欢你，只是谁都没说出口。你难受了好几天。|happy:-3,stress:3', 'g|1|你们找了家小馆子吃饭，聊到饭馆打烊。|happy:5', 'n|1|对方变化太大，你聊了半天才确定真的是TA。|', 'b|1|对方过得不太好，开口向你借了一笔钱。|cost:10000~50000,happy:-2|adult', 'g|1|你们像老朋友一样说了声“好久不见”，那一刻好像又回到了十七岁。|happy:6'],
+  'sp:fl2':['n|2|你低下头，假装看手机，等对方走远了才抬起头。|happy:-1', 'n|1|对方好像也看见了你，犹豫了一下，还是走了。|happy:-2', 'g|1|你觉得，有些人留在回忆里就好。|stress:-2', 'b|1|那天晚上你翻出了当年的相册，看到半夜。|happy:-2,stress:2', 'n|1|你没打招呼，可回家路上一直在想当年的事。|', 'g|1|你转身给{伴}买了一束花。|happy:3|married'],
+  'sp:fl3':['n|2|你们加了微信，偶尔点个赞，再也没聊过天。|', 'g|1|你们约了一群老同学聚了一次，聊得很开心。|happy:5', 'b|1|你们越聊越多，每天晚上都在聊天，聊着聊着就出了界。|happy:6,stress:8,@firstAffair|married', 'g|1|你们聊了几次，对方也单着。后来，你们在一起了。|happy:10,@firstTogether|single', 'n|1|你看了对方的朋友圈，发现TA过得很好，你就放心了。|happy:2', 'b|1|{伴}发现你和初恋聊天，跟你大吵了一架。|happy:-5,stress:6|married', 'n|1|聊了几句，你发现你们早就不是一路人了。|'],
+});
+const vrunN = (key, n) => { VNAME = n; try { vrun(key); } finally { VNAME = null; } };
+/* 特殊事件不和普通事件一起抽：每年单独掷一次骰子，大约一局两三个 */
+const SPECIALS = [
+  {id:'sp_rel', a:[16,70], once:1, w:.1, r:() => { const who = pick(['舅舅', '姑姑', '哥哥', '姐姐', '叔叔', '小姨']); modal('失散的亲人', pick([`一个陌生人在你家门口等了一下午，说是你失散多年的${who}。`, `寻亲节目打来电话，说你有一个失散多年的${who}在找你。`, `你在寻亲网站上留过血样，有人和你匹配上了：可能是你的${who}。`, `奶奶临终前告诉你，你还有一个${who}，当年被送给了别人。`]), [
+    {l:'相认', f:() => vrunTA('sp:rel1', who)}, {l:'先做个亲子鉴定', f:() => vrunTA('sp:rel2', who)}, {l:'不见', f:() => vrunTA('sp:rel0', who)},
+  ], '奇遇'); }},
+  {id:'sp_inh', a:[22,80], once:1, w:.09, r:() => modal('一笔遗产', pick(['律师打来电话：一位你几乎没印象的远房姑奶奶去世了，把遗产留给了你。', '你收到一封挂号信：你的一位远房舅公去世了，遗嘱里写着你的名字。', '一个老家的远亲去世了，没有儿女，指定你继承遗产。']), [
+    {l:'接受遗产', f:() => vrun('sp:inh1')}, {l:'放弃继承', f:() => vrun('sp:inh0')},
+  ], '奇遇')},
+  {id:'sp_old', a:[10,85], once:1, w:.11, r:() => modal('旧物里的东西', pick(['你在旧书摊买了本旧书，翻开发现里面夹着一个信封。', '你从二手市场搬回来一个旧柜子，抽屉的夹层里塞着东西。', '你买的二手沙发里，摸出来一个鼓鼓的布包。', '你收拾新租的房子，在天花板的夹层里找到一个铁盒。']), [
+    {l:'打开看看', f:() => vrun('sp:old1')}, {l:'想办法还给原主人', f:() => vrun('sp:old2')},
+  ], '奇遇')},
+  {id:'sp_relic', a:[16,80], once:1, w:.07, c:() => !S.flags.homeless, r:() => modal('挖到了东西', pick(['老家翻修房子，挖地基时挖出一个陶罐，里面有铜钱和一件玉器。', '你在工地干活，一铲子下去碰到了一块刻着字的青砖，下面好像是空的。', '一场大雨冲垮了后山的土坡，露出了几件锈迹斑斑的青铜器。']), [
+    {l:'上交国家', f:() => vrun('sp:relic1')}, {l:'偷偷卖掉', f:() => vrun('sp:relic2')}, {l:'留着自己收藏', f:() => vrun('sp:relic3')},
+  ], '奇遇')},
+  {id:'sp_star', a:[15,55], once:1, w:.1, c:() => S.st.looks >= 45, r:() => modal('被认错了', pick(['你在商场被一群人围住要签名——他们把你认成了一个当红明星。', '你在机场被一群举着牌子的粉丝追着跑，她们喊着一个明星的名字。', '饭店服务员红着脸问你：“您是不是那个……演电视剧的？”']), [
+    {l:'将错就错，签名合影', f:() => vrun('sp:star1')}, {l:'解释清楚', f:() => vrun('sp:star2')}, {l:'拍个视频发到网上', f:() => vrun('sp:star3')},
+  ], '奇遇')},
+  {id:'sp_tv', a:[18,60], once:1, w:.1, r:() => { const n = randName(other()); modal('上电视', pick(['一档电视节目在招素人嘉宾，朋友偷偷帮你报了名，你被选上了。', '电视台的导演在街头采访你，说你很有镜头感，想邀请你上节目。', '你在网上随手填的报名表，居然被节目组选中了。']), [
+    ...(!S.partner ? [{l:'去上相亲节目', f:() => vrunN('sp:tv1', n)}] : []), {l:'去上答题综艺', f:() => vrun('sp:tv2')}, {l:'不去', f:() => vrun('sp:tv0')},
+  ], '奇遇'); }},
+  {id:'sp_land', a:[12,85], once:1, w:.06, c:() => S.photos.length > 0 || S.money > 100000 || S.job, r:() => modal('紧急迫降', pick(['你坐的航班在高空遇到故障，机舱里警报大作，机长宣布紧急迫降。', '飞机剧烈颠簸，氧气面罩掉了下来。广播里说：“请大家做好防冲击姿势。”', '飞机的一个引擎起火了，机长说要在最近的机场迫降。']), [
+    {l:'给家里人写几句话', f:() => vrun('sp:land')}, {l:'安抚身边的乘客', f:() => vrun('sp:land')}, {l:'闭上眼睛祈祷', f:() => vrun('sp:land')},
+  ], '奇遇')},
+  {id:'sp_pat', a:[20,65], once:1, w:.1, c:() => S.st.smarts >= 50 && !S.jail && !S.flags.homeless, r:() => modal('一个小发明', pick(['你琢磨出了一个让晾衣服更省事的小装置，家里人都说好用。', '你在工作中想到了一个办法，能让机器的效率提高一大截。', '你给家里的老人做了一个防走失的小设备，邻居们都来问在哪买。', '你发明了一个可以自动给花浇水的东西，朋友说你该去申请专利。']), [
+    {l:'申请专利，找公司合作', f:() => vrun('sp:pat1')}, {l:'自己做成产品卖', d:'要投些钱', f:() => vrun('sp:pat2')}, {l:'免费公开给大家用', f:() => vrun('sp:pat3')},
+  ], '奇遇')},
+  {id:'sp_torch', a:[18,80], once:1, w:.05, c:() => S.st.health >= 50 && !S.flags.jailed && !S.jail && !S.flags.homeless, r:() => modal('火炬手', pick(['运动会的火炬传递要经过你的城市，你被选为了火炬手。', '因为你平时做的那些好事，社区推荐你当了火炬手。', '你所在的单位只有一个火炬手名额，大家一致推荐了你。']), [
+    {l:'光荣地去跑', f:() => vrun('sp:torch1')}, {l:'让给更合适的人', f:() => vrun('sp:torch0')},
+  ], '奇遇')},
+  {id:'sp_big', a:[16,70], once:1, w:.12, c:() => !S.jail, r:() => modal('路边的老人', pick(['下雨天，一个老人在路边摔倒了，半天没爬起来。路过的人都绕着走。', '地铁站里，一个老人捂着胸口坐在台阶上，脸色发白。', '你看见一个老人在路口迷了路，嘴里念叨着一个你没听过的地名。']), [
+    {l:'扶起来，送去医院，留下电话', f:() => vrun('sp:big1')}, {l:'送去医院，不留名就走', f:() => vrun('sp:big2')}, {l:'怕被讹，走开', f:() => vrun('sp:big0')},
+  ], '奇遇')},
+  {id:'sp_fl', a:[28,72], once:1, w:.12, c:() => S.flags.everLoved || S.age >= 30, r:() => { const n = randName(other()); modal('偶遇初恋', pick(['在街头的人群里，你一眼就认出了初恋{新人}。', '你在超市排队结账，前面那个人转过身来——是你的初恋{新人}。', '同学聚会上，你的初恋{新人}也来了，坐在你对面。', '出差的时候，你在酒店大堂碰到了初恋{新人}。']).replace('{新人}', n), [
+    {l:'上前打招呼', f:() => vrunN('sp:fl1', n)}, {l:'假装没看见', f:() => vrunN('sp:fl2', n)}, {l:'加个微信', f:() => vrunN('sp:fl3', n)},
+  ], '奇遇'); }},
+];
+function specialEvent(){
+  if (S.jail || S.age < 10 || !chance(.055)) return;
+  const ok = SPECIALS.filter(e => S.age >= e.a[0] && S.age <= e.a[1] && !S.once[e.id] && (!e.c || e.c()));
+  if (!ok.length) return;
+  let r = Math.random() * ok.reduce((s, e) => s + e.w, 0), e = ok[ok.length - 1];
+  for (const x of ok){ r -= x.w; if (r <= 0){ e = x; break; } }
+  S.once[e.id] = 1; S.evN = S.evN || {}; S.evN[e.id] = 1;
+  curNeed = e.c || null; const q0 = queue.length; evBegin();
+  try { e.r(); } finally { curNeed = null; evEnd(queue.length > q0); }
+}
+/* {TA} 换成具体的亲戚称呼 */
+function vrunTA(key, who){
+  const list = VARY[key];
+  VARY[key] = list.map(s => s.replace(/\{TA\}/g, who));
+  VCACHE.delete(key);
+  try { varyRun({l:key, f(){}}); } finally { VARY[key] = list; VCACHE.delete(key); }
+}
 
 /* ---------- 人生总结图：一张可以保存、发给朋友比较的长图 ---------- */
 /* 满分 1000：寿命 200 · 身心 200 · 财富 150 · 家庭 150 · 成就见识 200 · 品行 100，每一项越往上越难 */
