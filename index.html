@@ -735,6 +735,20 @@ function paText(t){
   }
   return t;
 }
+/* 轮着说：同一组句子在一辈子里全部用完之前，不会重复同一句 */
+function pickFresh(key, list){
+  if (!S || list.length < 2) return pick(list);
+  const P = S.pf = S.pf || {};
+  let o = P[key];
+  if (!o || o.n !== list.length || !o.q.length){
+    const q = list.map((_, i) => i);
+    for (let i = q.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
+    if (o && q[0] === o.last) q.push(q.shift());
+    o = P[key] = {n:list.length, q, last:null};
+  }
+  const i = o.q.shift(); o.last = i;
+  return list[i];
+}
 function L(text, kind = 'n', fx = {}, raw = false){
   if (S.done) return;
   if (ALT[text]) text = pick([text, ...ALT[text]]);
@@ -840,8 +854,8 @@ function cureIll(il, self){
   S.ills = S.ills.filter(x => x !== il);
   const d = ILL[il.id];
   if (d.back) S.cured.push(il.id);
-  L(self ? pick([`你的${d.n}不知不觉自己好了。`, `养了一阵子，你的${d.n}好了。`, `某天早上醒来，你发现${d.n}的症状都没了。`, `你都快忘了自己得过${d.n}。`, `复查的时候，医生说你的${d.n}已经好了。`, `${d.n}来得快，去得也快。`, `熬过了最难受的那段日子，${d.n}慢慢好了。`])
-            : pick([`你的${d.n}治好了！`, `医生说你的${d.n}已经痊愈了。`, `治了很久，${d.n}终于好了。`, `出院那天，你觉得连空气都是甜的：${d.n}治好了。`, `你的${d.n}好了，你请主治医生吃了顿饭。`]), 'g', {happy:8, stress:-8});
+  L(self ? pickFresh('selfcure', [`你的${d.n}不知不觉自己好了。`, `养了一阵子，你的${d.n}好了。`, `某天早上醒来，你发现${d.n}的症状都没了。`, `你都快忘了自己得过${d.n}。`, `复查的时候，医生说你的${d.n}已经好了。`, `${d.n}来得快，去得也快。`, `熬过了最难受的那段日子，${d.n}慢慢好了。`])
+            : pickFresh('cure', [`你的${d.n}治好了！`, `医生说你的${d.n}已经痊愈了。`, `治了很久，${d.n}终于好了。`, `出院那天，你觉得连空气都是甜的：${d.n}治好了。`, `你的${d.n}好了，你请主治医生吃了顿饭。`]), 'g', {happy:8, stress:-8});
   if (il.id === 'cancer'){ unlock('survivor'); node('愈', '战胜了癌症', il.tries ? `治了 ${il.tries} 次，花了很多钱，但你活下来了。` : '没怎么治，肿瘤自己消失了。医生说这是奇迹。'); }
   if (il.id === 'congenital'){ unlock('bornill'); node('愈', '治好了先天性心脏病', '从出生就跟着你的病，终于好了。'); }
   if (il.id === 'leg'){ node('立', '重新站了起来', '康复训练了无数次，你终于又能走路了。'); }
@@ -1228,7 +1242,7 @@ function bodyTick(){
     if (!d.perm && chance(d.self * (a >= 70 ? .6 : 1))) cureIll(il, true);
   }
   for (const id of [...S.cured]){
-    if (chance(ILL[id].back * .5)){ S.cured.splice(S.cured.indexOf(id), 1); addIll(id, `你的${ILL[id].n}复发了。`); }
+    if (chance(ILL[id].back * .5)){ S.cured.splice(S.cured.indexOf(id), 1); addIll(id, pickFresh('relapse', [`你的${ILL[id].n}复发了。`, `消停了没多久，${ILL[id].n}又犯了。`, `你以为${ILL[id].n}早就好了，没想到又找上门来。`, `一换季，你的${ILL[id].n}就又犯了。`, `医生看着你的片子叹了口气：${ILL[id].n}复发了。`, `熬了几个通宵之后，${ILL[id].n}又回来了。`])); }
     else if (chance(.1)) S.cured.splice(S.cured.indexOf(id), 1);
   }
   if (f.homeless){ f.hlYrs = (f.hlYrs || 0) + 1; ch('health', -R(1, 3)); }
@@ -1466,7 +1480,7 @@ function randomEvent(){
   const m = S.jail ? 'jail' : S.flags.homeless ? 'homeless' : S.flags.monk ? 'monk' : 'normal';
   // 同一件普通的事，一辈子最多遇到 3 次；流浪、坐牢、出家时的日常和一些持续性的事不限
   const UNCAP = ['urge','drunkfall','loan','digger','affairfound','owed','caught','grand','novisit','kidsick','teenkid','fight','shady'];
-  const capped = e => !e.x && !UNCAP.includes(e.id) && ((S.evN || {})[e.id] || 0) >= 3;
+  const capped = e => !e.x && !UNCAP.includes(e.id) && ((S.evN || {})[e.id] || 0) >= 2;
   const ok = EV.filter(e => S.age >= e.a[0] && S.age <= e.a[1] && ((e.x || 'normal') === m || e.any) && !(e.once && S.once[e.id]) && !capped(e) && (!e.c || e.c()));
   if (!ok.length) return;
   // 最近发生过的事，短期内不太会再来一次（隔得越久越可能再遇到）
@@ -1776,7 +1790,7 @@ EV.push(...[
     {l:'领养一个孩子', f:() => { const g = chance(.5) ? 'm' : 'f'; S.kids.push({n:S.name[0] + pick(g === 'f' ? GF : GM), g, b:S.age - R(1, 4)}); L('你们从福利院领养了一个孩子。', 'e', {happy:12}); }},
     {l:'丁克也挺好', f:() => L('你们决定两个人过。', 'n', {happy:2})},
   ], '感情')},
-  {id:'fight', a:[16,90], c:() => !!S.partner, r:() => modal('吵架', `你和${S.partner.name}因为${pick(['谁洗碗','逢年过节去谁家','一笔开销','手机里的一条消息'])}大吵了一架。`, [
+  {id:'fight', a:[16,90], w:.6, c:() => !!S.partner, r:() => modal('吵架', `你和${S.partner.name}因为${pick(['谁洗碗','逢年过节去谁家','一笔开销','手机里的一条消息'])}大吵了一架。`, [
     {l:'主动道歉', f:() => L('你们和好了。', 'g', {happy:2})},
     {l:'送个礼物', d:'2 千', f:() => L('一束花和一条项链，对方笑了。', 'g', {happy:3, money:-2000})},
     {l:'冷战', f:() => chance(isMarried() ? .1 : .35) ? (isMarried() ? divorce(`冷战了半年，你和${S.partner.name}离婚了。`) : breakup(`冷战了一个月，你和${S.partner.name}分开了。`)) : L('冷战一周后，你们和好了。', 'n', {happy:-3, stress:4})},
@@ -3419,7 +3433,12 @@ function famBudget(){
   if (tier() <= 1){
     S.flags.famDebt = (S.flags.famDebt || 0) + over;
     const both = S.parents.alive[0] && S.parents.alive[1];
-    pick([
+    pickFresh('fam', [
+      () => L('爸爸开始每天抽更便宜的烟，你问他，他说是想戒了。', 'b', {happy:-4, stress:4}),
+      () => L('你发现妈妈的那件旧外套，又穿了一个冬天。', 'b', {happy:-5, stress:3}),
+      () => L('爸妈把家里的电视卖了，说反正也没时间看。', 'b', {happy:-5, stress:4}),
+      () => L('妈妈去餐馆洗碗，晚上回来手泡得发白。', 'b', {happy:-6, stress:5}),
+      () => L('你听见爸妈在厨房小声算账，算到一半就不说话了。', 'b', {happy:-5, stress:5}),
       () => L(`这一年你花了家里 ${fmt(sp)}。爸爸偷偷去工地多打了一份工，回来时腰都直不起来。`, 'b', {happy:-6, stress:6}),
       () => L('为了给你凑钱，妈妈把结婚时的金戒指卖了。你很久以后才知道。', 'b', {happy:-8, stress:5}),
       both ? () => L('爸妈为了钱吵了一整晚，你躲在被子里不敢出声。', 'b', {happy:-7, stress:8})
@@ -3427,9 +3446,10 @@ function famBudget(){
       () => L('家里交不上房租了，爸妈去亲戚家借了钱，回来脸色很难看。', 'b', {happy:-5, stress:6}),
       () => L(`过年时亲戚当着你的面说：“一年花 ${fmt(sp)}，你家供得起吗？”`, 'b', {happy:-6, stress:4}),
     ])();
-    if (sp > cap * 3 && parentsAlive() && chance(.35)){
+    if (sp > cap * 3 && parentsAlive() && (S.flags.famSick || 0) < 2 && chance(.35)){
+      S.flags.famSick = (S.flags.famSick || 0) + 1;
       S.parents.dieAt = S.parents.dieAt.map(d => d - R(1, 3));
-      L('爸爸累出了病，在医院住了一个星期，出院第二天又去上班了。', 'b', {happy:-8, stress:6});
+      L(S.flags.famSick === 1 ? '爸爸累出了病，在医院住了一个星期，出院第二天又去上班了。' : '妈妈连着打了两份工，有天在车间里晕倒了。', 'b', {happy:-8, stress:6});
     }
   } else if (tier() === 2){
     L(pick(['你花钱大手大脚，爸妈把你叫到跟前狠狠训了一顿，零花钱也停了。', `妈妈翻着账本叹气：“这一年光你就花了 ${fmt(sp)}。”`]), 'b', {happy:-4, stress:4});
@@ -4884,14 +4904,14 @@ function petTick(){
     else if (r < .3 && P.talk) parrotTalk(p);
     else if (r < .33 && ['dog','cat'].includes(P.kind) && p.age >= 1 && p.age <= 8 && !p.fixed) petLitter(p);
     else if (r < .4 && P.race) horseRace(p);
-    else if (r < .42 && P.kind === 'dog') L(pick([`有天夜里家里进了贼，${p.n}一阵狂叫，把小偷吓跑了。`, `你心情很差的那天，${p.n}一直把头靠在你膝盖上。`]), 'g', {happy:5});
-    else if (r < .45 && P.kind === 'cat') L(pick([`${p.n}半夜在你脸上踩来踩去，把你踩醒了。`, `${p.n}叼来一只死老鼠放在你枕头边，像是在报恩。`]), 'n', {happy:2});
+    else if (r < .42 && P.kind === 'dog') L(pickFresh('dogday', [`有天夜里家里进了贼，${p.n}一阵狂叫，把小偷吓跑了。`, `你心情很差的那天，${p.n}一直把头靠在你膝盖上。`, `${p.n}在公园里交了个“女朋友”，每天出门都要往那边跑。`, `${p.n}把你的拖鞋叼到了阳台上，藏了起来。`, `${p.n}学会了自己开门，你回家时它已经在楼下等你了。`, `${p.n}偷吃了一整只烤鸡，被你抓了个正着，一脸无辜。`, `下雪天你带${p.n}出门，它在雪地里疯跑，跑成了一只雪团。`, `${p.n}老了，跑不动了，可每次你回家，它还是会摇着尾巴走过来。`]), 'g', {happy:4});
+    else if (r < .45 && P.kind === 'cat') L(pickFresh('catday', [`${p.n}半夜在你脸上踩来踩去，把你踩醒了。`, `${p.n}叼来一只死老鼠放在你枕头边，像是在报恩。`, `${p.n}趴在你的键盘上，把你写了一半的文件删光了。`, `${p.n}把阳台上的花盆一个个推了下去。`, `${p.n}钻进了你的行李箱，怎么都不肯出来。`, `${p.n}每天准时在早上五点叫你起床要饭吃。`, `你生病躺在床上，${p.n}在你胸口趴了一整天。`, `${p.n}和窗外的一只鸟对视了一下午。`]), 'n', {happy:2});
   }
   if (!pets().length || S.jail) return;
   const minor = S.age < 18;
   if (minor) famPay(cost);
   const names = pets().map(p => p.n).join('、');
-  L(`${pick([`${names}又陪了你一年`, `${names}一年到头都在你身边`, `家里有${names}在，这一年热热闹闹的`, `${names}吃得好睡得好，又胖了一圈`, `${names}又大了一岁`, `你每天回家，${names}都在门口等你`, `这一年，${names}陪你度过了很多个晚上`, `${names}把家里的沙发当成了自己的地盘`])}${cost ? `，吃喝看病花了 ${fmt(cost)}` : ''}。`, 'n', {money:minor || S.jail ? 0 : -cost, happy:Math.min(6, Math.ceil(joy / 2)), stress:-Math.min(6, Math.ceil(joy / 2))});
+  L(`${pickFresh('petyr', [`${names}又安安稳稳地过了一年`, `这一年你最常拍的照片，主角都是${names}`, `${names}陪着你熬过了这一年的不容易`, `${names}又陪了你一年`, `${names}一年到头都在你身边`, `家里有${names}在，这一年热热闹闹的`, `${names}吃得好睡得好，又胖了一圈`, `${names}又大了一岁`, `你每天回家，${names}都在门口等你`, `这一年，${names}陪你度过了很多个晚上`, `${names}把家里的沙发当成了自己的地盘`])}${cost ? `，吃喝看病花了 ${fmt(cost)}` : ''}。`, 'n', {money:minor || S.jail ? 0 : -cost, happy:Math.min(6, Math.ceil(joy / 2)), stress:-Math.min(6, Math.ceil(joy / 2))});
 }
 function petSick(p){
   const P = PETS[p.i], k = P.kind === 'big' ? 10 : P.kind === 'small' ? .3 : 1;
@@ -5028,7 +5048,7 @@ function afterRepay(){
 function beaten(lvl, d){
   unlock('beaten');
   const h = R(8, 16) * Math.min(3, lvl);
-  L(pick(S.flags.homeless ? ['他们在桥洞下找到了你，把你打了一顿。', '他们把你拖上面包车，打了一顿扔在了郊外。', '你被按在地上拳打脚踢，肋骨断了两根。'] : ['几个人把你堵在楼道里打了一顿，你鼻青脸肿地爬回了家。', '他们把你拖上面包车，打了一顿扔在了郊外。', '你被按在地上拳打脚踢，肋骨断了两根。']), 'b', {health:-h, happy:-10, stress:12});
+  L(pickFresh(S.flags.homeless ? 'beatH' : 'beat', S.flags.homeless ? ['他们在桥洞下找到了你，把你打了一顿。', '他们把你拖上面包车，打了一顿扔在了郊外。', '你被按在地上拳打脚踢，肋骨断了两根。'] : ['几个人把你堵在楼道里打了一顿，你鼻青脸肿地爬回了家。', '他们把你拖上面包车，打了一顿扔在了郊外。', '你被按在地上拳打脚踢，肋骨断了两根。']), 'b', {health:-h, happy:-10, stress:12});
   if (chance(.3)) addIll('fracture');
   if (lvl >= 3 && chance(.12)) addIll('leg');
   const port = (S.items || []).filter(x => !x.got && PORTABLE.includes(x.k)).sort((a, b) => b.v - a.v)[0];
@@ -5037,6 +5057,8 @@ function beaten(lvl, d){
 }
 function sharkVisit(d, lvl){
   if (S.flags.fled && S.age - S.flags.fled <= 2 && chance(.7)) return;
+  if (lvl >= 2 && S.flags.sharkAt != null && S.age - S.flags.sharkAt < 2) return;   // 上门要钱隔一两年来一次，不是年年来
+  if (lvl >= 2) S.flags.sharkAt = S.age;
   const hl = S.flags.homeless;
   if (hl && chance(.6)) return;
   cue('paint');
@@ -5056,7 +5078,7 @@ function sharkVisit(d, lvl){
 function courtCase(d, lvl){
   const f = S.flags, who = d ? d.n.replace(/的钱$/, '') : '债主', owe = d ? d.amt : -S.money;
   if (lvl === 1){
-    L(pick([`${who}的催收电话一天打几十个，连你单位都知道了。`, `你的征信上多了一条逾期记录，${who}说再不还就起诉。`]), 'b', {happy:-5, stress:8});
+    L(pickFresh('dun', [`${who}的催收电话一天打几十个，连你单位都知道了。`, `你的征信上多了一条逾期记录，${who}说再不还就起诉。`, `${who}给你家里人打了电话，爸妈急得一夜没睡。`, `你收到一封律师函，说再不还钱就走法律程序。`, `你的手机被催收短信塞满了，每一条都写着“最后通知”。`, `${who}的人给你通讯录里的同事挨个发了消息。`]), 'b', {happy:-5, stress:8});
     return;
   }
   if (lvl === 2 || !f.blacklist){
@@ -5080,8 +5102,11 @@ function courtCase(d, lvl){
     if (taken.length === 1 && xs.length === 1) node('封', '家产被查封', '法院的人在门上贴封条的时候，邻居们都在看。', true);
     return;
   }
-  if (lvl >= 4 && f.ignored && chance(.35)){ goJail(R(1, 3), '你名下没有可执行的财产，又一直拒不履行判决。法院以拒不执行判决、裁定罪判了你的刑。'); return; }
-  L(pick(['法院找上门，你被司法拘留了十五天。', '你名下什么都没有，法院把你的银行卡全部冻结了。']), 'b', {happy:-8, stress:10});
+  // 名下什么都没有：拘留、冻结、因拒执坐牢，一辈子各最多一次；之后只是“老赖”的日常
+  if (lvl >= 4 && f.ignored && !f.contempt && chance(.35)){ f.contempt = 1; goJail(R(1, 3), '你名下没有可执行的财产，又一直拒不履行判决。法院以拒不执行判决、裁定罪判了你的刑。'); return; }
+  if (!f.detained){ f.detained = 1; L('法院找上门，你被司法拘留了十五天。', 'b', {happy:-8, stress:10}); return; }
+  if (!f.frozen){ f.frozen = 1; L('你名下什么都没有，法院把你的银行卡全部冻结了。', 'b', {happy:-6, stress:8}); return; }
+  if (chance(.45)) L(pickFresh('laolai', ['你坐不了高铁，回老家只能坐十几个小时的绿皮车。', '你去应聘，人家一查征信就摇了头。', '你的名字和照片出现在了法院门口的失信名单大屏上。', '你想住个好点的酒店，前台说你的身份证刷不了。', '债主每隔几个月就打一次电话，你已经不敢接陌生号码了。', '过年回家，亲戚们都知道你上了失信名单，饭桌上没人跟你说话。', '你想办张信用卡，银行连申请都不让你提交。', '你在网上搜自己的名字，第一条就是失信被执行人信息。']), 'b', {happy:-3, stress:3});
 }
 function kinVisit(d, lvl){
   if (lvl === 1){ L(pick(['借你钱的亲戚开始在家族群里阴阳怪气。', '过年回家，借你钱的亲戚当着全家的面问你什么时候还。']), 'b', {happy:-5, stress:5}); return; }
