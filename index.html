@@ -1472,7 +1472,9 @@ function randomEvent(){
   // 最近发生过的事，短期内不太会再来一次（隔得越久越可能再遇到）
   S.evAt = S.evAt || {}; S.evN = S.evN || {};
   const wt = x => { const l = S.evAt[x.id], g = l == null ? 99 : S.age - l; return (x.w || 1) * (g >= 8 ? 1 : Math.max(.05, g / 8)) / (1 + (S.evN[x.id] || 0) * .6); };
-  let r = Math.random() * ok.reduce((s, x) => s + wt(x), 0), e = ok[ok.length - 1];
+  const tw = ok.reduce((s, x) => s + wt(x), 0);
+  if (tw < 8 && Math.random() * 8 > tw) return;   // 能发生的事太少时（小时候、坐牢、流浪），不硬塞重复的事
+  let r = Math.random() * tw, e = ok[ok.length - 1];
   for (const x of ok){ r -= wt(x); if (r <= 0){ e = x; break; } }
   S.evAt[e.id] = S.age; S.evN[e.id] = (S.evN[e.id] || 0) + 1;
   if (e.once) S.once[e.id] = 1;
@@ -1550,7 +1552,7 @@ const EV = [
   ])},
   {id:'petdie', a:[10,30], once:1, w:.6, c:() => S.flags.pet, r:() => { S.flags.pet = 0; L('陪了你很多年的宠物老死了，你把它埋在了楼下的树下。', 'b', {happy:-10}); }},
   {id:'olymp', a:[9,15], c:() => S.st.smarts >= 60, r:() => chance(S.st.smarts / 160) ? (unlock('olymp'), L('你在奥赛中拿了金牌！', 'g', {smarts:3, happy:6})) : L('你参加了奥赛，拿了个参与奖。', 'n', {smarts:1})},
-  {id:'break', a:[5,16], w:.7, r:() => { L('你爬树时摔下来，左手骨折了。', 'b', {health:-6, happy:-3}); addIll('fracture'); }},
+  {id:'break', a:[5,16], w:.25, r:() => { L('你爬树时摔下来，左手骨折了。', 'b', {health:-6, happy:-3}); addIll('fracture'); }},
   {id:'myopia', a:[8,15], once:1, c:() => S.school, r:() => L('你看黑板越来越模糊，配了一副眼镜。', 'n', {looks:-2})},
   {id:'skip', a:[7,12], once:1, c:() => S.st.smarts >= 85 && S.school && S.school.lvl === 1, r:() => { S.school.end--; L('你成绩太好，学校让你跳了一级。', 'g', {smarts:2, happy:4, stress:4}); }},
   {id:'repeat', a:[8,15], once:1, c:() => S.st.smarts < 30 && S.school, r:() => { S.school.end++; L('你成绩太差，被留级了。', 'b', {happy:-8, stress:6}); }},
@@ -5338,6 +5340,7 @@ function extraTick(){
   if (S.alive) affairTick();
   if (S.alive) debtPressure();
   if (S.alive) specialEvent();
+  if (S.alive) rollEvents();
   if (S.alive){
     const col = (S.items || []).filter(x => !x.got && !x.fake && ['vase','painting','liquor','goldbar','jet','yacht'].includes(x.k)).length;
     if (col >= 3) unlock('collector');
@@ -5888,6 +5891,29 @@ function specialEvent(){
   curNeed = e.c || null; const q0 = queue.length; evBegin();
   try { e.r(); } finally { curNeed = null; evEnd(queue.length > q0); }
 }
+/* 有些事不该跟普通事件一起抽（小时候能发生的事少，它们会被抽得太勤），改成每年单独掷骰子 */
+const ROLLS = [['parentsdiv', .011], ['crush', .09]];
+ROLLS.forEach(([id]) => { const e = EV.find(x => x.id === id); if (e){ e.c0 = e.c; e.c = () => false; e.once = 1; } });
+function rollEvents(){
+  for (const [id, p] of ROLLS){
+    const e = EV.find(x => x.id === id);
+    if (!e || S.age < e.a[0] || S.age > e.a[1] || S.once[id] || (e.c0 && !e.c0()) || !chance(p)) continue;
+    S.once[id] = 1; S.evN = S.evN || {}; S.evN[id] = (S.evN[id] || 0) + 1;
+    curNeed = e.c0 || null; const q0 = queue.length; evBegin();
+    try { e.r(); } finally { curNeed = null; evEnd(queue.length > q0); }
+    if (!S.alive) return;
+  }
+}
+/* 情窦初开：开场白和结果都多一些 */
+Object.assign(VHOOK, {teenmeet:() => { if (!S.partner) setPartner(VX.newName, true); }});
+Object.assign(VARY, {
+  'ev:crush1':['g|2|你和{新人}开始偷偷约会。|happy:8,@teenmeet', 'g|1|你们放学一起走了一路，谁都没怎么说话，到路口才说了声再见。后来你们在一起了。|happy:8,@teenmeet', 'b|1|第二天你才发现，那是同学们恶作剧写的。|happy:-6,stress:4', 'n|1|你们一起走了几次，发现没什么话说，就慢慢不一起走了。|happy:1', 'b|1|你们一起走的时候被班主任撞见了，叫了家长。|happy:-5,stress:5', 'g|1|你们在小卖部门口分一根冰棍，你觉得那是全世界最甜的冰棍。后来你们在一起了。|happy:9,@teenmeet', 'n|1|走到一半下起了雨，你们共撑一把伞，肩膀都湿透了。|happy:5', 'b|1|你答应了，结果在校门口等了半小时，TA却和别人走了。|happy:-5', 'g|1|你们约好考同一所高中。后来你们在一起了。|happy:8,@teenmeet'],
+  'ev:crush2':['n|2|你把它夹进课本，继续刷题。|happy:-2', 'n|1|你把它揉成一团扔进了垃圾桶，回家后又后悔了。|happy:-2', 'g|1|你把心思都放在了学习上，那次考试考得特别好。|smarts:1~2,happy:1', 'n|1|你没回应，后来看到TA和别人一起走，心里有点酸。|happy:-3', 'n|1|你把它偷偷留了很多年。|happy:1', 'b|1|你拒绝得太直接，TA哭着跑开了，同学们都说你冷血。|happy:-3,stress:3', 'g|1|你写了一句“好好学习”还给TA，后来你们成了最好的朋友。|happy:3', 'n|1|你装作没看见，可那一整天都没听进去课。|stress:2'],
+  'ev:crush3':['g|2|你们传了一学期的纸条，后来在一起了。|happy:8,@teenmeet', 'b|1|纸条被同桌抢走，在全班念了出来。|happy:-6,stress:5', 'n|1|你们的纸条越写越长，内容却全是作业答案。|happy:2', 'g|1|你在纸条上画了一个笑脸，TA回了一整页。|happy:5', 'b|1|纸条被老师没收了，贴在了教室后面。|happy:-5,stress:4', 'n|1|你们传着传着就毕业了，谁也没说破。|happy:-1', 'g|1|你们约好周末去图书馆一起写作业。后来你们在一起了。|happy:7,@teenmeet', 'n|1|你回了一句“好啊”，TA第二天却假装什么都没发生。|happy:-2'],
+});
+evSet('crush', () => { const n = randName(other()); modal('情窦初开', pick([`同班的${n}偷偷塞给你一张纸条：“放学一起走吗？”`, `你的课桌抽屉里多了一封信，落款是隔壁班的${n}。`, `运动会上，${n}跑过来给你递了一瓶水，脸红红的。`, `${n}在你的同学录上写了一大段话，最后一句是“我喜欢你”。`, `晚自习的时候，后排的${n}传过来一张折成心形的纸。`, `你过生日那天，${n}偷偷在你桌上放了一盒巧克力。`, `${n}托你最好的朋友带话：“想跟你做朋友。”`, `下雨天，${n}把伞塞给你，自己冒雨跑走了。`]), [
+  {l:pick(['答应', '点点头', '红着脸答应']), f:() => vrunN('ev:crush1', n)}, {l:'回一张纸条', f:() => vrunN('ev:crush3', n)}, {l:pick(['专心学习', '装作没看见', '委婉地拒绝']), f:() => vrunN('ev:crush2', n)},
+], '感情'); });
 /* {TA} 换成具体的亲戚称呼 */
 function vrunTA(key, who){
   const list = VARY[key];
