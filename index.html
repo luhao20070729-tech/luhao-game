@@ -1187,9 +1187,11 @@ function moneyTick(){
       S.biz = null;
     } else {
       let p = Math.round(b.base * (Math.random() * 1.6 - .25));
-      if (p > 0) p = Math.round(p * bizGain());
+      if (p > 0) p = Math.round(p * bizGain() * (b.share || 1) * (b.mgr ? .8 : 1));
       b.base = Math.round(b.base * (0.92 + Math.random() * 0.3));
       inc += p; notes.push(p >= 0 ? `公司盈利 ${fmt(p)}` : `公司亏损 ${fmt(-p)}`);
+      // 上了年纪还亲自管公司，身体吃不消；请了职业经理人就轻松得多
+      if (a >= 60 && !b.mgr){ S.st.health = clamp(S.st.health - R(1, 3), 0, 100); S.st.stress = clamp(S.st.stress + 3, 0, 100); notes.push('亲自操持公司很累'); }
     }
   }
   const H = S.assets.houses;
@@ -1198,6 +1200,7 @@ function moneyTick(){
   if (H.length > 1){ const r = Math.round(H.slice(1).reduce((s, h) => s + h.v * .02, 0)); inc += r; notes.push(`房租 ${fmt(r)}`); }
   if (tier() === 4 && parentsAlive() && !f.cutoff){ inc += 300000; notes.push('家族分红 30万'); }
   if (a >= 60){ const kk = S.kids.filter(k => !k.dead && k.filial && a - k.b >= 25); if (kk.length){ const v = kk.length * 12000; inc += v; notes.push(`孩子给的生活费 ${fmt(v)}`); } }
+  inc += sideIncome(notes);
   if (S.money > 0) inc += Math.round(S.money * .015);
   const P = S.partner;
   if (P && P.married && P.inc){ const v = Math.round(P.inc * .5); inc += v; notes.push(`${P.name}贴补家用 ${fmt(v)}`); P.wealth = Math.round((P.wealth || 0) + P.inc * .3); }
@@ -1292,7 +1295,7 @@ function newIll(){
     ['lung',    f.smoker && a >= 45 ? .025 : 0],
     ['liver',   f.drunkard && a >= 35 ? .03 : 0],
     ['stroke',  a >= 60 ? .007 + (hasIll('bp') ? .02 : 0) : 0],
-    ['dementia',a >= 70 ? .005 + (a - 70) * .001 : 0],
+    ['dementia',a >= 70 ? (.005 + (a - 70) * .001) * (1 - Math.min(.6, (f.brain || 0) * .06)) : 0],
   ];
   for (const [id, p] of P) if (!hasIll(id) && chance(p)){ addIll(id, ILL[id].t); return; }
 }
@@ -1300,10 +1303,12 @@ function newIll(){
 /* ---------- 上学和考试：再聪明也可能发挥失常 ---------- */
 function exam(){
   const s = S.st.stress, r = Math.random();
+  // 小时候认的字、拿过的竞赛奖，考试时都算数
+  const plus = Math.min(3, S.flags.early || 0) * 4 + Math.min(2, S.flags.award || 0) * 12;
   const bad = .07 + (s >= 75 ? .2 : s >= 55 ? .08 : 0) + (S.ills.length ? .05 : 0);
-  if (r < bad) return [-R(70, 150), pick(['考试那天你发了高烧','你太紧张，最后两道大题没写完','你涂错了答题卡','前一晚失眠，你在考场上差点睡着','路上堵车，你迟到了二十分钟'])];
-  if (r > .93) return [R(30, 70), pick(['你超常发挥，压轴题全做出来了','考前押的题全中了'])];
-  return [R(-35, 35), ''];
+  if (r < bad) return [-R(70, 150) + plus, pick(['考试那天你发了高烧','你太紧张，最后两道大题没写完','你涂错了答题卡','前一晚失眠，你在考场上差点睡着','路上堵车，你迟到了二十分钟'])];
+  if (r > .93) return [R(30, 70) + plus, pick(['你超常发挥，压轴题全做出来了','考前押的题全中了'])];
+  return [R(-35, 35) + plus, ''];
 }
 function schoolTick(){
   const a = S.age;
@@ -1472,7 +1477,8 @@ function checkDeath(){
   if (a >= 55) p += Math.pow((a - 55) / 45, 3) * .45;
   p += (100 - h) / 100 * (a >= 50 ? .008 + (a - 50) * .0012 : .002);
   if (tal('long')) p *= .6;
-  if (a < 18) p *= .4;   // 小孩子很少会毫无征兆地突然病逝
+  p *= oldCare();
+  if (a < 18) p *= .4;  // 小孩子很少会毫无征兆地突然病逝
   if (chance(p)){ die(a >= 85 ? '在睡梦中安详离世' : h < 35 ? '病情恶化，不幸离世' : '突发疾病离世', 'natural'); return true; }
   return false;
 }
@@ -2088,7 +2094,7 @@ const ACTS = [
   {l:'谈加薪', m:['adult'], ok:() => !!S.job, d:() => '有风险', risky:1, f:() => chance(.2 + S.job.perf * .1) ? (S.job.pay = Math.round(S.job.pay * 1.12), L('老板答应给你加薪 12%。', 'g', {happy:5})) : chance(.15) ? (L('老板脸一沉：“嫌少可以走。”第二天你就被调去了闲职，后来干脆被辞退了。', 'b', {happy:-8, stress:8}), S.job = null) : L('老板说：“明年再说。”', 'n', {happy:-2})},
   {l:'辞职', m:['adult'], ok:() => !!S.job && S.age < 60, d:() => '不干了', f:() => { L(`你辞去了${jobName()}的工作。`, 'n', {happy:3, stress:-10}); S.job = null; }},
   {l:'退休', m:['adult','old'], ok:() => !!S.job && S.age >= 55, d:() => '安享晚年', f:() => retire()},
-  {l:'创业', m:['adult'], ok:() => S.age >= 20 && S.money >= 50000 && !S.biz && !S.school, modal:1, d:() => '5 万起', risky:1, f:startBiz},
+  {l:'创业', m:['adult','old'], ok:() => S.age >= 20 && S.age <= 78 && S.st.health >= 35 && S.money >= 50000 && !S.biz && !S.school, modal:1, d:() => '5 万起', risky:1, f:startBiz},
   {l:'经营公司', m:['adult','old'], ok:() => !!S.biz, modal:1, d:() => S.biz.n, f:bizMenu},
   // 身心
   {l:'健身锻炼', m:['uni','adult'], d:() => '健康', f:() => chance(.04) ? (L('你在健身房拉伤了腰，躺了一个月。', 'b', {health:-4}), 0) : tryAct('health', 1, 4, ['你每天早上坚持跑步。','你办了健身卡，这次真的去了。','你学会了游泳。'], ['你办了张健身卡，一共去了三次。','你买了跑鞋，一直放在门口。'], {money:adultMoney(2000), stress:-2})},
@@ -2179,7 +2185,7 @@ const ACTS = [
       } else { S.flags.write = 5; L('投稿被退了回来，编辑说“还差一点”。', 'b', {happy:-3}); }
     } else L(pick(['你写了几万字。','你熬夜写完了一个章节。','你删掉了昨天写的全部内容，重新开始。']), 'n', {smarts:R(0, 1)});
   }},
-  {l:'练习才艺', m:['kid','teen','uni','adult','old'], ok:() => (S.flags.talent || 0) < 10, d:() => `才艺 Lv.${S.flags.talent || 0}`, f:() => {
+  {l:'练习才艺', m:['kid','teen','uni','adult'], ok:() => (S.flags.talent || 0) < 10, d:() => `才艺 Lv.${S.flags.talent || 0}`, f:() => {
     if (!tal('art') && chance(trait().lazy + .1)){ L(pick(['你买了一把吉他，挂在墙上落灰。','你练了三天就放弃了。']), 'n'); return; }
     S.flags.talent = Math.min(10, (S.flags.talent || 0) + (tal('art') && chance(.5) ? 2 : 1));
     L(pick(['你每天练一小时钢琴。','你报了声乐班。','你学会了弹吉他。','你开始学跳街舞。','你在家对着镜子练唱歌。','你学会了一首新曲子，弹给家里人听。','你练书法练得手腕发酸。','你学了一年架子鼓，邻居快疯了。','你画的画被朋友挂在了家里。','你开始学魔术，能变几个小把戏了。','你学会了跳一整支舞。','你参加了一场业余比赛，拿了个鼓励奖。','你学会了做陶艺，捏的杯子歪歪扭扭。']) + `（才艺 Lv.${S.flags.talent}）`, 'g', {happy:2});
@@ -2329,12 +2335,12 @@ function investMenu(){
 }
 
 function startBiz(){
-  const B = [['小吃摊', 50000, 60000, .7, .08], ['小店', 100000, 150000, .6, .07], ['公司', 500000, 800000, .45, .06], ['工厂', 2000000, 3000000, .4, .05], ['互联网项目', 5000000, 12000000, .2, .1]];
-  modal('创业', '十个创业，九个失败。你想做点什么？', [
+  const B = [['小吃摊', 50000, 60000, .7, .08], ['小茶馆', 80000, 80000, .65, .06], ['小店', 100000, 150000, .6, .07], ['公司', 500000, 800000, .45, .06], ['工厂', 2000000, 3000000, .4, .05], ['互联网项目', 5000000, 12000000, .2, .1]];
+  modal('创业', S.age >= 60 ? '人老心不老。只是这个年纪亲自操持生意很耗身体，开起来以后最好请个职业经理人。' : '十个创业，九个失败。你想做点什么？', [
     ...B.map(([n, cost, base, p, risk]) => ({l:`开${n === '互联网项目' ? '一个' : '一家'}${n}`, d:`投入 ${fmt(cost)}`, dis:() => S.money < cost || S.ap <= 0, f:() => {
       spend();
       if (S.job){ L(`你辞去了${jobName()}的工作，全身心创业。`, 'n'); S.job = null; }
-      if (chance(p + S.st.smarts / 400 + (S.flags.bizKid ? .05 : 0) + bizLuck())){
+      if (chance(p + S.st.smarts / 400 + (S.flags.bizKid ? .05 : 0) + bizLuck() + (S.age >= 50 ? .05 : 0))){
         S.biz = {n, base, risk, yrs:0}; unlock('boss');
         L(`你的${n}开张了，生意不错！`, 'e', {money:-cost, happy:10, stress:8});
         node('商', `开了自己的${n}`, '剪彩那天，你请了所有能请的朋友。');
@@ -2343,15 +2349,7 @@ function startBiz(){
     {l:'算了', d:'不消耗行动', f:() => {}},
   ], '创业');
 }
-function bizMenu(){
-  const b = S.biz;
-  modal(b.n, `你的${b.n}开了 ${b.yrs || 0} 年，去年大约能赚 ${fmt(b.base)}。`, [
-    {l:'扩大规模', d:'投入一半存款', dis:() => S.money < 50000 || S.ap <= 0, f:() => { spend(); const c = Math.round(S.money / 2); if (chance(.5)){ b.base = Math.round(b.base * 1.6 + c * .2); L('你开了分店，生意越做越大。', 'g', {money:-c, happy:6, stress:6}); } else L('扩张太快，新店亏得一塌糊涂。', 'b', {money:-c, happy:-8, stress:10}); }},
-    {l:'做假账逃税', d:'省一大笔 · 违法', dis:() => S.ap <= 0, f:() => { spend(); if (chance(.3)){ S.biz = null; goJail(R(2, 6), '税务局查出了你做的假账。你的公司被查封，你本人被判了刑。'); } else L(`你少交了 ${fmt(b.base)} 的税，心里一直不踏实。`, 'n', {money:b.base, stress:10}); }},
-    {l:'卖掉公司', d:`约 ${fmt(b.base * 3)}`, dis:() => S.ap <= 0, f:() => { spend(); const v = Math.round(b.base * (2 + Math.random() * 2)); S.biz = null; L(`你把${b.n}卖了，到手 ${fmt(v)}。`, 'e', {money:v, happy:6, stress:-10}); }},
-    {l:'算了', d:'不消耗行动', f:() => {}},
-  ], '经营');
-}
+function bizMenu(){ bizMenu2(); }
 function gambleMenu(){
   const bet = amt => () => {
     spend();
@@ -3466,6 +3464,7 @@ function doAction(a){
   if (a.modal){ a.f(); afterChange(); return; }
   const rep = S.yr[a.l] = (S.yr[a.l] || 0) + 1, hab = S.hab[a.l] || 0, cat = catOf(a.l), before = {...S.st};
   spend(); if (VARY[a.l]) varyRun(a); else a.f();
+  if (a.post && S.alive && !S.done) a.post(/[ge]/.test(lastKind()));
   if (S.alive && !S.done && !flopCheck(a, cat, before)) afterEffects(a, cat, rep, hab, before);
   if (S.alive && !S.done && SIDE[cat] && chance(.08)) pick(SIDE[cat])();
   afterChange();
@@ -6116,7 +6115,7 @@ function raiseRate(){ if (era('winter')) return 0; return .02 + Math.random() * 
 function lifeRate(){ return tal('miser') ? .7 : 1; }
 function bizRisk(){ return (tal('bizmind') ? .5 : 1) * (era('winter') ? 1.6 : 1); }
 function bizGain(){ return (tal('bizmind') ? 1.2 : 1) * (era('winter') ? .6 : era('startup') ? 1.35 : 1); }
-function jobLuck(){ return (tal('noble') ? .15 : 0) + (era('winter') ? -.15 : 0) + (era('boom') ? .1 : 0); }
+function jobLuck(){ return Math.min(3, S.flags.club || 0) * .03 + Math.min(4, S.flags.coder || 0) * .025 + (tal('noble') ? .15 : 0) +(era('winter') ? -.15 : 0) + (era('boom') ? .1 : 0); }
 function investLuck(){ return (tal('fortune') ? .08 : 0) + (era('bull') ? .15 : 0) + (era('winter') ? -.1 : 0); }
 function bizLuck(){ return (tal('bizmind') ? .15 : 0) + (era('startup') ? .15 : 0) + (era('winter') ? -.1 : 0); }
 
@@ -6212,6 +6211,7 @@ function lifeTick(){
   }
   if ((S.hab || {})['约老同学'] > 0){ f.reun = (f.reun || 0) + 1; if (f.reun >= 3) unlock('reunion'); }
   wishTick();
+  oldTick();
 }
 
 /* ---------- 家族传承：这一世走完，可以接着当自己的孩子 ---------- */
@@ -6231,7 +6231,7 @@ function heirLine(F){
 function continueAs(kid){
   if (!S || S.alive || !kid) return;
   recordScore();
-  const o = {origin:heirOrigin(), from:{name:S.name, gender:S.gender, age:S.age, b:kid.b, smarts:S.st.smarts, looks:S.st.looks},
+  const o = {origin:heirOrigin(), from:{name:S.name, gender:S.gender, age:S.age, b:kid.b, smarts:Math.min(100, S.st.smarts + (S.flags.famTree ? 12 : 0)), looks:S.st.looks},
     gen:(S.gen || 1) + 1, anc:[...(S.anc || []), {n:S.name, a:S.age, e:S.end, s:S.score}].slice(-12)};
   $('#finale').hidden = true;
   newLife(kid.n, kid.g, o);
@@ -6363,6 +6363,351 @@ EV.push(
     ], '人生抉择', '', {raw:true});
   }}
 );
+
+/* ==========================================================================
+   每个年纪都有几件“做了真的有用”的事；老了也能创业；公司能折腾；
+   天上掉的馅饼有真有假
+   ========================================================================== */
+function lastKind(){ const g = S.log[S.log.length - 1], it = g && g.items[g.items.length - 1]; return it ? it.k : 'n'; }
+/* 在刚写下的那句话后面补一句“这件事带来了什么” */
+function noteLast(s){ const g = S.log[S.log.length - 1], it = g && g.items[g.items.length - 1]; if (it) it.t += s; }
+function bump(k, n, max){ S.flags[k] = Math.round(Math.min(max, (S.flags[k] || 0) + n) * 10) / 10; return S.flags[k]; }
+const actBy = l => ACTS.find(a => a.l === l);
+const grownKids = (lo = 22) => S.kids.filter(k => !k.dead && S.age - k.b >= lo);
+function kidLove(k, n){ k.bond = (k.bond || 0) + n; if (S.age - k.b >= 25 && k.bond >= 3) k.filial = true; }
+
+/* ---------- 晚年的身体底子：常锻炼、常动脑、有老伙伴，就没那么容易倒下 ---------- */
+function oldCare(){
+  const f = S.flags, a = S.age;
+  if (a < 50) return 1;
+  let m = 1 - Math.min(.3, (f.fit || 0) * .03);
+  if (f.checkY >= a - 2) m *= .88;
+  if ((f.oldfr || 0) >= 3) m *= .93;
+  return m;
+}
+
+/* ---------- 每年结算时的额外收入：手艺、私活、养老账户、书法字画、菜地、公司分红 ---------- */
+function sideIncome(notes){
+  const f = S.flags, a = S.age;
+  let v = 0;
+  const add = (x, t) => { if (x > 0){ v += x; notes.push(`${t} ${fmt(x)}`); } };
+  if ((f.craft || 0) >= 3 && a >= 18 && !S.jail && (!S.job || a >= 60)) add(Math.round(R(8, 20) * 1000 * f.craft / 3), `${f.craftN || '手艺'}活`);
+  if ((f.coder || 0) >= 3 && a >= 18 && a < 65 && !S.jail && !S.job && S.st.smarts >= 50) add(R(3, 8) * 10000, '接私活');
+  if (f.nest > 0){
+    if (a < 60) f.nest = Math.round(f.nest * 1.04);
+    else { const x = Math.round(f.nest / Math.max(4, 85 - a)); f.nest -= x; if (f.nest < 1000) f.nest = 0; add(x, '养老账户'); }
+  }
+  if (f.callig && a >= 60 && chance(.6)) add(R(2, 15) * 1000, '书法润笔');
+  if ((f.garden || 0) >= 1 && f.gardenY >= a - 2) add(R(3, 8) * 1000, '菜地省下的菜钱');
+  if (f.bizDiv > 0) add(Math.round(f.bizDiv * (.7 + Math.random() * .6)), '孩子公司给的分红');
+  if (f.consult === a - 1) add(f.consultPay, '顾问费');
+  return v;
+}
+
+/* ---------- 每年跑一遍：不练就会退步 ---------- */
+function oldTick(){
+  const f = S.flags, a = S.age;
+  if (f.fit && f.fitY < a - 1) f.fit = Math.max(0, f.fit - 1);
+  if (f.brain && f.brainY < a - 1) f.brain = Math.max(0, f.brain - 1);
+  if (f.oldfr && f.oldfrY < a - 3) f.oldfr = Math.max(0, f.oldfr - 1);
+  if ((f.oldfr || 0) >= 3 && a >= 55) S.st.happy = clamp(S.st.happy + 1, 0, 100);
+  if (f.bizDiv && !S.kids.some(k => !k.dead && k.biz)) f.bizDiv = 0;
+}
+
+/* ---------- 一、给原来的晚年行动补上实际作用 ---------- */
+Object.assign(actBy('晨练遛弯'), {d:() => `体能 ${S.flags.fit || 0}/10`, post:ok => {
+  if (!ok) return; const f = S.flags, n = bump('fit', 1, 10); f.fitY = S.age;
+  noteLast(`（体能 ${n}/10：晚年更扛得住病）`);
+}});
+Object.assign(actBy('广场舞'), {d:() => `老伙伴 ${S.flags.oldfr || 0} 个`, post:ok => {
+  const f = S.flags; if (!ok) return;
+  const n = bump('oldfr', 1, 8); f.oldfrY = S.age; bump('fit', .5, 10); f.fitY = S.age;
+  noteLast(`（老伙伴 ${n} 个：心情好，也不容易孤单）`);
+  if (!S.partner && S.age < 85 && chance(.07)){ const p = randName(other()); setPartner(p); L(`舞队里的${p}总是站在你旁边。一来二去，你们走到了一起。`, 'g', {happy:10}); }
+}});
+Object.assign(actBy('下棋打牌'), {d:() => `脑力 ${S.flags.brain || 0}/10`, post:ok => {
+  const f = S.flags; if (!ok) return;
+  const n = bump('brain', 1, 10); f.brainY = S.age;
+  noteLast(`（脑力 ${n}/10：老了不容易糊涂）`);
+  if (chance(.08)){ const x = R(2, 8) * 1000; L(pickFresh('chesswin', [`社区老年棋牌赛上，你一路过关斩将拿了第一，奖金 ${fmt(x)}。`, `你代表街道去区里比赛，捧回一个奖杯和 ${fmt(x)} 奖金。`, `你在老年桥牌赛上拿了名次，奖金 ${fmt(x)}。`, `棋友们凑钱办了场擂台赛，你赢走了全部 ${fmt(x)} 彩头。`]), 'g', {money:x, happy:5}); }
+}});
+Object.assign(actBy('养花钓鱼'), {d:() => S.flags.garden ? '菜地在打理' : '', post:ok => {
+  const f = S.flags; if (!ok) return;
+  if (!f.garden) noteLast('（你开出了一小块菜地：以后每年能省下一笔菜钱）');
+  bump('garden', 1, 5); f.gardenY = S.age;
+}});
+Object.assign(actBy('带孙子'), {post:ok => {
+  if (!ok) return; const k = grownKids(22)[0]; if (!k) return;
+  kidLove(k, 1); S.flags.grandcare = (S.flags.grandcare || 0) + 1;
+  noteLast(`（${k.n}嘴上不说，心里记着你的好）`);
+}});
+
+/* 老年大学：每次学一门课，每门课都有用处 */
+delete VARY['老年大学'];
+const COURSES = [
+  {k:'antiScam', n:'智能手机防骗班', ok:['你在老年大学的智能手机班学会了视频通话、扫码付款，还上了一堂防诈骗课。', '老师把骗子的套路一个个拆开讲，你记了满满一本笔记。', '你学会了用手机挂号、买菜，也学会了怎么分辨假客服。'], gain:'以后接到可疑电话、碰到“发财机会”，更容易看出真假'},
+  {k:'callig', n:'书法班', ok:['你在老年大学学了一年书法，写出来的字有模有样了。', '你的毛笔字被老师挑去参加了展览。', '你每天临一页帖，手腕稳了，心也静了。'], gain:'逢年过节有人上门求字，能挣点润笔'},
+  {k:'hcare', n:'养生保健班', ok:['你在老年大学听了一年养生课，饮食作息都改了不少。', '你学会了看体检报告，知道哪些指标该当心。', '老师教的八段锦你每天都练，腰不疼了。'], gain:'体能 +2，晚年更扛得住病'},
+  {k:'choir', n:'合唱团', ok:['你进了老年大学的合唱团，每周排练两次。', '你们合唱团在区里的汇演上拿了奖，你站在第二排正中间。', '你在合唱团里唱声部，认识了一大群老伙伴。'], gain:'老伙伴 +2，日子不冷清'},
+  {k:'photo', n:'摄影班', ok:['你在老年大学学了摄影，背着相机满城跑。', '你拍的晚霞照片被社区报登了出来。', '你学会了修图，给全家拍了一组像样的全家福。'], gain:'心情更好，也更愿意出门走走'},
+  {k:'pc', n:'电脑班', ok:['你在老年大学学会了用电脑打字、上网、发邮件。', '你学会了做表格，帮小区物业算了一回账。', '你学会了在网上查资料，再也不用事事问孩子了。'], gain:'脑力 +2，老了不容易糊涂'},
+];
+Object.assign(actBy('老年大学'), {d:() => { const n = COURSES.filter(c => S.flags[c.k]).length; return `已结业 ${n}/${COURSES.length} 门`; }, f:() => {
+  const f = S.flags, left = COURSES.filter(c => !f[c.k]);
+  if (!left.length){ L(pickFresh('uni3', ['老年大学的课你都上过了，这一年你回去当了助教。', '你成了老年大学的“老学长”，新来的同学都来请教你。', '你在老年大学办了一场个人作品展。', '你把这些年学到的东西编成小册子，送给了新同学。']), 'g', {happy:R(3, 6), stress:-3, money:-500}); bump('oldfr', 1, 8); f.oldfrY = S.age; return; }
+  if (chance(.15)){ L(pickFresh('uni0', ['你报的班太抢手，没抢到名额。', '上了两节课，你觉得老师讲得太快，没再去。', '这学期你身体不太好，课落下了一大半。', '你和同学闹了点别扭，后来就不太想去了。', '开学那天下大雨，你没去成，后来也就算了。']), 'n', {happy:-1, money:-500}); return; }
+  const c = left[0]; f[c.k] = S.age;
+  if (c.k === 'hcare'){ bump('fit', 2, 10); f.fitY = S.age; }
+  if (c.k === 'choir'){ bump('oldfr', 2, 8); f.oldfrY = S.age; }
+  if (c.k === 'pc'){ bump('brain', 2, 10); f.brainY = S.age; }
+  L(`${pick(c.ok)}（${c.n}结业：${c.gain}）`, 'g', {happy:R(3, 6), stress:-3, money:-1500});
+}});
+
+/* ---------- 二、年纪不合适的事，到岁数就不再出现 ---------- */
+const AGECAP = {'找情人':72, '陪情人':78, '给情人花钱':78, '夜生活':50, '摆地摊':78, '约会交友':88, '打扮自己':75, '赌一把':85};
+for (const [l, max] of Object.entries(AGECAP)){ const a = actBy(l); if (!a) continue; const o = a.ok; a.ok = () => S.age <= max && (!o || o()); }
+{ const a = actBy('直播带货'); if (a){ a.m = ['uni','adult','old']; const o = a.ok; a.ok = () => S.age <= 80 && (!o || o()); } }
+
+/* ---------- 三、每个年纪新增的行动 ---------- */
+ACTS.push(
+  // 幼儿
+  {l:'认字识数', m:['tot'], ok:() => (S.flags.early || 0) < 3, d:() => `启蒙 ${S.flags.early || 0}/3`, f:() => {
+    if (chance(trait().lazy + .1)){ L(pickFresh('early0', ['你认了三个字就跑去玩积木了。', '大人拿着识字卡追了你一下午，你一张也没看。', '你把识字卡当成了扑克牌，撒了一地。', '你掰着手指头数到五，就再也数不下去了。', '你一看见书就打哈欠。']), 'n'); return; }
+    const n = bump('early', 1, 3);
+    L(pickFresh('early1', ['你已经能认一百多个字了，看到招牌就大声念出来。', '你学会了从一数到一百，还会倒着数。', '你能自己看图画书了，一个人能安静地看半天。', '你学会了写自己的名字，写得歪歪扭扭。', '你在超市里算出了两样东西一共多少钱，店员都惊了。', '你背会了十几首古诗，过年时被拉出来表演。', '你认得了所有的拼音字母。', '你学会了简单的加减法，天天缠着大人出题。', '你把家里的日历撕下来，一页一页地认上面的字。', '你会看钟了，每天提醒大人几点该吃饭。']) + `（启蒙 ${n}/3：以后考试更占便宜）`, 'g', {smarts:R(1, 2), happy:1});
+  }},
+  // 小学到中学
+  {l:'学游泳', m:['kid','teen'], ok:() => !S.flags.swim, d:() => S.flags.swimP ? `学了 ${S.flags.swimP} 回` : '', f:() => {
+    const f = S.flags; f.swimP = (f.swimP || 0) + 1;
+    if (f.swimP >= 2 && chance(.75)){ f.swim = 1; L(pickFresh('swim1', ['你终于敢松开浮板了，一口气游了二十五米。', '教练说你动作标准，你在泳池里扑腾得像条鱼。', '你学会了蛙泳和自由泳，暑假天天往泳池跑。', '你考下了深水证，可以去深水区玩了。', '你在河边救起了一个落水的小孩，爸妈吓出一身冷汗，又为你骄傲。']) + '（学会了游泳：以后落水能自救）', 'g', {health:R(1, 3), happy:3}); }
+    else L(pickFresh('swim0', ['你呛了好几口水，抱着浮板不肯撒手。', '你在浅水区练了一个暑假的憋气。', '你学会了漂，就是还不会往前游。', '教练说你腿蹬得不对，你练了一下午也没改过来。', '你一下水就紧张，总觉得会沉下去。']), 'n', {health:1, money:famPay(800)});
+  }},
+  {l:'当班干部', m:['kid','teen'], ok:() => !S.flags.leader && S.school, d:() => '', f:() => {
+    if (chance(.35 + S.st.smarts / 300 + S.st.looks / 400)){ S.flags.leader = 1; L(pickFresh('lead1', ['你在班委选举里拿了最多的票，当上了班长。', '老师让你当学习委员，你每天帮大家收作业。', '你当上了体育委员，运动会上带着全班喊口号。', '你竞选上了文艺委员，元旦晚会全是你张罗的。', '你成了大队委，袖子上多了三道杠。']) + '（当过干部：以后工作上更容易被提拔）', 'g', {happy:5, stress:3}); }
+    else L(pickFresh('lead0', ['你上台竞选，紧张得把演讲稿念串了行，只拿了三票。', '你和最好的朋友竞争同一个职位，你输了。', '老师说你成绩还要再稳一稳，这次先不考虑你。', '你拉了一圈票，开票时发现很多人答应了你却没投你。', '班长又被那个家里有关系的同学当上了。']), 'n', {happy:-3});
+  }},
+  {l:'参加竞赛', m:['kid','teen'], ok:() => S.st.smarts >= 55 && (S.flags.award || 0) < 2 && S.school, d:() => S.flags.award ? `获奖 ${S.flags.award} 次` : '', f:() => {
+    const sub = pick(['数学','物理','作文','英语','编程','化学','科技创新']);
+    if (chance(.15 + (S.st.smarts - 55) / 120)){ const n = bump('award', 1, 2); L(`你在全市${sub}竞赛里拿了一等奖，奖状被贴在了学校门口。（竞赛获奖：升学考试有加分）`, 'g', {happy:8, stress:4, smarts:1}); if (n === 1) node('奖', `${sub}竞赛一等奖`, '颁奖的时候，你看见爸妈在台下偷偷抹眼泪。'); }
+    else L(pickFresh('comp0', [`你参加了${sub}竞赛，只拿了个优秀奖。`, `${sub}竞赛的题太难了，你连一半都没做完。`, `你在${sub}竞赛复赛里被淘汰了，回家哭了一场。`, `你为${sub}竞赛集训了一个暑假，最后差两分没进决赛。`, `你在${sub}竞赛考场上大脑一片空白。`, `${sub}竞赛只有前三名有奖，你是第四。`]), 'n', {stress:5, smarts:R(0, 2)});
+  }},
+  // 少年起：学手艺、学编程
+  {l:'学一门手艺', m:['teen','uni','adult','homeless','old'], ok:() => S.age >= 14 && S.age < 70 && (S.flags.craft || 0) < 5, d:() => S.flags.craft ? `${S.flags.craftN} Lv.${S.flags.craft}` : '', f:() => {
+    const f = S.flags; if (!f.craftN) f.craftN = pick(['木工','厨艺','修车','理发','裁缝','修家电','烘焙','电焊','推拿']);
+    if (chance(trait().lazy + .1)){ L(pickFresh('craft0', [`你跟着师傅学${f.craftN}，被骂了几句就不想去了。`, `你学${f.craftN}学到一半，手上磨出了血泡，歇了好久。`, `这一年你没怎么碰${f.craftN}，手都生了。`, `师傅说你学${f.craftN}心不定，让你回去想清楚再来。`]), 'n', {happy:-1}); return; }
+    const n = bump('craft', 1, 5);
+    L(pickFresh('craft1', [`你跟着老师傅学了一年${f.craftN}，手上渐渐有了准头。`, `你的${f.craftN}手艺被街坊夸了，开始有人上门找你帮忙。`, `你考下了${f.craftN}的技能证书。`, `你在${f.craftN}上琢磨出了自己的门道。`, `你用${f.craftN}的手艺帮邻居解决了一个大麻烦，人家送来一篮鸡蛋。`, `你的${f.craftN}在比赛里拿了名次。`, `你每天下班后都练一会儿${f.craftN}，越来越熟练。`, `你帮朋友做了一回${f.craftN}的活，朋友硬塞给你一个红包。`, `师傅说你的${f.craftN}已经出师了。`, `你把${f.craftN}的工具添置齐了，在家里收拾出了一个小工作间。`]) + `（${f.craftN} Lv.${n}${n >= 3 ? '：没工作或老了以后，每年能靠手艺挣点钱' : ''}）`, 'g', {happy:3, money:S.age >= 18 ? -R(1, 3) * 1000 : 0});
+  }},
+  {l:'学编程', m:['teen','uni','adult'], ok:() => S.age >= 12 && S.age < 45 && (S.flags.coder || 0) < 4, d:() => S.flags.coder ? `编程 Lv.${S.flags.coder}` : '', f:() => {
+    if (chance(trait().lazy + .15)){ L(pickFresh('code0', ['你对着报错信息看了一晚上，最后关掉了电脑。', '你买了一套编程课，看了两节就没再打开。', '你写的程序一运行就崩，你怀疑自己不是这块料。', '你跟着教程敲代码，敲完了也没弄懂为什么。', '你装开发环境装了一整天，一行代码也没写成。', '你卡在一个报错上三天，最后发现是少写了一个分号。', '你下定决心每天写一小时，坚持了五天。', '你写的代码被网上的人批得一无是处，你关掉了网页。']), 'n', {stress:3}); return; }
+    const n = bump('coder', 1, 4);
+    L(pickFresh('code1', ['你写出了第一个小游戏，拉着家人玩了一晚上。', '你做了一个记账小程序，自己天天在用。', '你在开源社区提交了第一行代码，被采纳了。', '你帮朋友的小店做了个点单网页。', '你熬夜参加了一场编程马拉松，拿了个奖。', '你终于搞懂了递归，激动得在屋里转圈。', '你写了个脚本，把每天两小时的活儿缩短到了五分钟。', '你在网上做的小工具有了几百个用户。', '你刷完了一本算法题，面试题再也难不倒你了。', '你学会了一门新语言，简历上又多了一行。']) + `（编程 Lv.${n}：找工作更容易${n >= 3 ? '，没工作时还能接私活' : ''}）`, 'g', {smarts:R(1, 2), stress:3});
+  }},
+  // 大学
+  {l:'参加社团', m:['uni'], ok:() => (S.flags.club || 0) < 3, d:() => S.flags.club ? `人脉 ${S.flags.club}/3` : '', f:() => {
+    const n = bump('club', 1, 3);
+    L(pickFresh('club1', ['你加入了辩论队，跟着学长学姐打了好几场比赛。', '你在学生会外联部拉到了第一笔赞助。', '你进了登山社，周末跟着大家去爬山。', '你在话剧社演了个配角，谢幕时台下掌声很响。', '你当上了吉他社的副社长。', '你在志愿者协会认识了一群朋友，后来都成了你的人脉。', '你加入了创业社团，跟着学长做项目。', '你在摄影社负责拍校园活动，作品挂满了一整面墙。', '你在社团里认识的学长，后来给你内推了实习。', '你在模拟联合国当了代表，第一次用英语跟人吵架。']) + `（人脉 ${n}/3：毕业找工作更顺）`, 'g', {happy:R(3, 5), stress:2});
+    if (!S.partner && chance(.08)){ const p = randName(other()); setPartner(p); L(`社团活动结束后，${p}留下来帮你收拾东西。你们就这样在一起了。`, 'g', {happy:8}); }
+  }},
+  {l:'找实习', m:['uni'], ok:() => !S.flags.intern, d:() => '', f:() => {
+    if (chance(.45 + S.st.smarts / 300 + (S.flags.club || 0) * .05)){ S.flags.intern = 1; L(pickFresh('intern1', ['你在一家大公司实习了半年，转正答辩时被领导点名表扬。', '你在律所实习，跟着律师跑了好几趟法院。', '你在一家创业公司实习，一个人干三个人的活，学到了很多。', '你在银行实习，学会了穿正装、写报告。', '你在报社实习，第一篇署名稿子登上了版面。', '你在设计公司实习，做的方案被客户选中了。']) + '（有了实习经历：找工作更容易）', 'g', {money:R(5, 15) * 1000, stress:5, smarts:1}); }
+    else L(pickFresh('intern0', ['你投了三十份简历，只收到两个面试，都没过。', '你去的那家公司只让你端茶倒水、复印文件。', '面试官问你有什么经验，你一时答不上来。', '你找到的实习要倒贴钱，你没去。', '你实习了一个月，公司就裁员了，你第一个被请走。']), 'n', {happy:-3, stress:3});
+  }},
+  // 成年
+  {l:'进修充电', m:['adult'], ok:() => !!S.job && S.age < 55, d:() => '学费 1~3 万', f:() => {
+    const c = R(1, 3) * 10000;
+    if (chance(.7)){ S.job.perf = (S.job.perf || 0) + 2; const up = chance(.4); if (up) S.job.pay = Math.round(S.job.pay * 1.06);
+      L(pickFresh('study1', ['你报了个在职研究生，周末去上课，学到的东西马上用上了。', '你去参加了一个行业培训，回来就把部门的流程改了一遍。', '你考下了一个含金量很高的证书。', '你花钱上了个管理课，开会时说话有了章法。', '你跟着行业大牛学了半年，眼界宽了很多。', '你自学了一门新技能，正好赶上公司要用。', '你参加了公司的骨干培训班，领导开始注意到你。', '你报了个夜校，每天下班后去上两小时课。', '你把专业书从头到尾啃了一遍，业务上再没人难得住你。', '你出国参加了一个短期交流项目，回来做了一场分享。']) + (up ? '（领导给你涨了 6% 的工资）' : '（表现分 +2：更容易升职）'), 'g', {money:-c, smarts:R(1, 3), stress:4}); }
+    else L(pickFresh('study0', ['你交了学费，结果课程全是空话套话。', '你报了班，可工作太忙，一半的课都没去。', '你学的东西在公司根本用不上。', '那个培训机构上了一半就跑路了。']), 'b', {money:-c, happy:-3});
+  }},
+  {l:'存养老钱', m:['adult'], ok:() => S.age >= 25 && S.money >= 30000 && !(S.flags.nestY > S.age - 3), d:() =>S.flags.nest ? `已存 ${fmt(S.flags.nest)}` : '每年 4% · 60 岁起领', f:() => {
+    const x = Math.max(20000, Math.round(S.money * .2 / 1000) * 1000);
+    S.flags.nest = (S.flags.nest || 0) + x; S.flags.nestY = S.age;
+    L(pickFresh('nest', [`你往养老账户里存了 ${fmt(x)}，这笔钱六十岁以前取不出来。`, `你咬咬牙存了 ${fmt(x)} 养老钱，心里踏实了不少。`, `你算了算以后的开销，又往养老账户里放了 ${fmt(x)}。`, `你把年终奖里的 ${fmt(x)} 转进了养老账户。`, `你听了理财经理的建议，存了 ${fmt(x)} 养老。`, `你又存了 ${fmt(x)}。账户里的数字一年年往上涨，看着就安心。`, `你存了 ${fmt(x)} 养老钱，跟自己说：老了不求人。`, `你把 ${fmt(x)} 锁进了养老账户，省得自己手痒乱花。`]) + `（账户共 ${fmt(S.flags.nest)}，每年涨 4%，六十岁后按年发放）`, 'g', {money:-x, stress:-3});
+  }},
+  {l:'孝敬父母', m:['uni','adult','old'], ok:() => S.age >= 18 && parentsAlive() && (S.flags.pcare || 0) < 6, d:() => S.flags.pcare ? `陪了 ${S.flags.pcare} 年` : '', f:() => {
+    const f = S.flags, c = S.money > 0 ? Math.min(Math.round(S.money * .05), R(3, 20) * 1000) : 0;
+    f.pcare = (f.pcare || 0) + 1;
+    S.parents.dieAt = S.parents.dieAt.map((d, i) => S.parents.alive[i] ? d + 1 : d);
+    L(pickFresh('pcare', ['你带爸妈去医院做了一次全面体检，查出的小毛病都及时治了。', '你给爸妈换了一张好床垫和一台按摩椅。', '你每周都给爸妈打两个电话，周末回去吃饭。', '你带爸妈出去旅游了一趟，妈妈拍了几百张照片。', '你给爸妈家装了扶手和防滑垫，省得他们摔跤。', '你陪爸爸去看了他念叨了好几年的老战友。', '你教爸妈用智能手机，他们终于学会了视频通话。', '你给爸妈请了个钟点工，他们不用再自己爬高打扫了。', '你在爸妈家住了一个月，天天陪他们散步。', '你给爸妈办了一场热热闹闹的生日宴。', '你发现妈妈血压有点高，盯着她按时吃药。', '你帮爸妈把老房子翻修了一遍。']) + '（爸妈身体硬朗了些，能多陪你几年）', 'g', {happy:R(3, 6), stress:-2, money:-c});
+  }},
+  {l:'定期体检', m:['adult','old'], ok:() => S.age >= 35 && !(S.flags.checkY > S.age - 3), d:() => '3000~8000 元', f:() => {
+    const f = S.flags, c = Math.round(R(3, 8) * 1000 * insRate()); f.checkY = S.age;
+    const early = S.ills.find(il => il.yrs <= 1 && ILL[il.id] && ILL[il.id].fatal);
+    if (early && chance(.5)){ L(`体检时查出你的${ILL[early.id].n}还在早期，医生说发现得及时。`, 'g', {money:-c, stress:3}); cureIll(early); return; }
+    if (chance(.12)){ const id = pick(['bp','sugar','stomach']); if (!hasIll(id)){ S.ills.push({id, yrs:0, tries:0, tx:S.age}); L(`体检查出了${ILL[id].n}的苗头。好在发现得早，医生开了药，叮嘱你按时吃。`, 'n', {money:-c, stress:4}); return; } }
+    L(pickFresh('check', ['体检报告一切正常，你松了一口气。', '体检报告上只有两项小箭头，医生说注意饮食就行。', '医生说你的身体比同龄人年轻好几岁。', '你做了胃肠镜，什么问题都没有。', '体检医生提醒你少熬夜，别的都还好。', '体检报告显示血脂有点高，你决定少吃点肉。', '你被医生夸“保养得好”，回家高兴了一晚上。', '体检结果出来，一切都在正常范围内。', '你的骨密度比去年还好了一点，医生让你继续保持。', '医生说你的心电图很漂亮，比年轻人还稳。', '你查了一圈，只有颈椎有点退化，医生让你多抬头。', '体检时排了一上午的队，结果样样都好，你觉得这罪没白受。']) + '（这两年得了大病也能早发现）', 'g', {money:-c, stress:-3});
+  }},
+  // 晚年
+  {l:'返聘当顾问', m:['old'], ok:() => S.retired && S.age < 76 && S.st.smarts >= 45 && S.st.health >= 40 && S.flags.consult !== S.age, d:() => '', f:() => {
+    const f = S.flags, pay = Math.round((50000 + S.st.smarts * 1200 + (S.pension || 0) * .3) *(.8 + Math.random() * .5) / 1000) * 1000;
+    if (chance(.2)){ L(pickFresh('cons0', ['你托人打听了一圈，老单位说现在不缺人。', '有家公司本来要请你，后来老板换人了，事情就黄了。', '对方嫌你年纪大，客客气气地把你送了出来。', '你去面了两家，人家要的都是会新技术的。']), 'n', {happy:-2}); return; }
+    f.consult = S.age; f.consultPay = pay;
+    L(pickFresh('cons1', ['老单位把你请回去当技术顾问，年轻人一有难题就来找你。', '一家民营企业请你去当顾问，每周去三天。', '你被一所职业学校请去当兼职老师，给学生讲实战经验。', '你给一家公司把关质量，几十年的经验派上了用场。', '你被请去当评审专家，到处开会、出意见。', '你帮一家小厂理顺了管理，老板一口一个“师父”。', '老同事开了公司，硬拉你去帮忙坐镇。', '你在社区开了个咨询工作室，专帮人看合同、算账。', '你成了一家企业的“首席顾问”，名片印得比退休前还气派。', '你被返聘回原单位带新人，退休金照拿，又多了一份收入。']) + `（这一年有 ${fmt(pay)} 顾问费）`, 'g', {happy:4, stress:5, health:-1});
+  }},
+  {l:'带徒弟', m:['adult','old'], ok:() => S.age >= 45 && ((S.flags.craft || 0) >= 3 || (S.flags.talent || 0) >= 6 || (S.flags.coder || 0) >= 3 || (S.job && S.job.lv >= 2) || (S.pension || 0) >= 80000) && (S.flags.appr || 0) < 6, d:() => S.flags.appr ? `徒弟 ${S.flags.appr} 个` : '', f:() => {
+    const f = S.flags, n = f.appr = (f.appr || 0) + 1, gift = R(2, 10) * 1000;
+    L(pickFresh('appr', ['你收了个踏实的小徒弟，手把手地教，看着他一点点上手。', '徒弟出师那天，摆了一桌酒敬你，喊你“师父”喊得你眼眶发热。', '你把压箱底的本事教给了徒弟，一点没藏私。', '你的徒弟在比赛里拿了奖，第一个打电话告诉你。', '徒弟逢年过节都提着东西来看你。', '你带的徒弟自己开了店，门口挂着你写的招牌。', '你骂了徒弟一顿，第二天他还是早早来了。', '你教了一辈子，第一次觉得这些本事不会跟着你一起走了。', '徒弟把你的绝活拍成视频发到网上，点赞过了十万。', '你的徒弟又收了徒弟，你成了“师爷”。']) + `（徒弟 ${n} 个：手艺有人传，逢年过节有人惦记）`, 'g', {happy:R(4, 7), money:gift, stress:2});
+    if (n === 3) node('徒', '桃李满门', '你教出来的人，散落在这座城市的各个角落。');
+  }},
+  {l:'写家谱', m:['old'], ok:() => !S.flags.famTree, d:() => '', f:() => {
+    S.flags.famTree = S.age;
+    L('你花了一整年，走访老亲戚、翻旧档案，把家里五代人的名字和故事都写进了一本家谱，最后还写了一页家训。（后人读着它长大：下一代更聪明、更有出息）', 'e', {happy:8, smarts:2, stress:-4});
+    node('谱', '修了家谱', '你在最后一页写下：后人当自强。');
+  }},
+  {l:'提前分家产', m:['old'], ok:() => grownKids(22).length > 0 && S.money >= 100000 && !S.flags.split, modal:1, d:() => '', f:() => {
+    const ks = grownKids(22), x = Math.round(S.money * .4);
+    modal('提前分家产', `你把${ks.map(k => k.n).join('、')}叫到跟前，想趁着脑子还清楚，先把一部分家底分下去，免得以后起争执。`, [
+      {l:'拿出四成，平分', d:`共 ${fmt(x)}`, dis:() => S.ap <= 0, f:() => { spend(); S.flags.split = S.age; ks.forEach(k => kidLove(k, 3)); L(`你把 ${fmt(x)} 平分给了孩子们。${ks[0].n}握着你的手说：“爸妈放心，以后有我们。”（孩子们更孝顺，养老更有着落）`, 'g', {money:-x, happy:8, stress:-6}); }},
+      {l:'多给最孝顺的那个', d:`共 ${fmt(x)}`, dis:() => S.ap <= 0 || ks.length < 2, f:() => { spend(); S.flags.split = S.age; const best = ks.slice().sort((p, q) => (q.bond || 0) - (p.bond || 0))[0]; kidLove(best, 4); ks.filter(k => k !== best).forEach(k => kidLove(k, -2)); L(`你把大头给了${best.n}。其他孩子嘴上没说什么，过年回来的次数却少了。`, 'n', {money:-x, happy:2, stress:4}); }},
+      {l:'再等等', d:'不消耗行动', f:() => {}},
+    ], '家庭');
+  }},
+  {l:'回老家看看', m:['adult','old'], ok:() => S.age >= 50 && (!S.flags.homeY || S.age - S.flags.homeY >= 4) && S.money >= 3000, d:() => '路费 3000 元', f:() => {
+    const f = S.flags; f.homeY = S.age; bump('oldfr', 1, 8); f.oldfrY = S.age;
+    L(pickFresh('home', ['你回了一趟老家。村口的老槐树还在，小时候的伙伴都老了。', '你在老家的小学门口站了很久，教室早就翻新了。', '你回老家给祖坟添了土，跟长辈说了说这些年的事。', '老家通了高铁，你两个小时就到了，可认识你的人没剩几个了。', '你在老家的集市上吃到了小时候的味道，差点哭出来。', '你和发小在老屋前喝了一下午茶，说起当年偷西瓜的事，笑出了眼泪。', '你帮老家的小学捐了一批书，校长非要留你吃饭。', '你回老家住了半个月，每天跟着老人下地、喝酒、晒太阳。']) + '（老伙伴 +1，心里踏实了）', 'g', {happy:R(5, 9), stress:-R(6, 10), money:-3000});
+  }},
+);
+
+/* ---------- 四、公司能做的事 ---------- */
+function bizMenu2(){
+  const b = S.biz, act = fn => () => { spend(); fn(); };
+  const kid = grownKids(22).find(k => !k.biz);
+  const team = ['几个人的小作坊', '十来个人', '几十号人', '上百人', '好几百人'][Math.min(4, b.staff || 0)];
+  modal(b.n, `你的${b.n}开了 ${b.yrs || 0} 年，${team}，去年大约能赚 ${fmt(Math.round(b.base * (b.share || 1)))}${b.share ? `（你占 ${Math.round(b.share * 100)}%）` : ''}。${b.mgr ? '日常由职业经理人打理。' : S.age >= 60 ? '这个年纪还亲自操持，很耗身体。' : ''}`, [
+    {l:'扩大规模', d:'投入一半存款', dis:() => S.money < 50000 || S.ap <= 0, f:act(() => { const c = Math.round(S.money / 2); if (chance(.5 + (b.brand || 0) * .05)){ b.base = Math.round(b.base * 1.6 + c * .2); b.staff = (b.staff || 0) + 1; L(pickFresh('bzx1', ['你开了分店，生意越做越大。', '你租下了隔壁的门面，打通成了一大间。', '你在另一个城区开了第二家，开业第一天就排起了队。', '你扩建了厂房，订单接到了明年。', '你招了一批新人，公司搬进了更大的写字楼。', '你拿下了一个大客户，公司规模翻了一倍。']), 'g', {money:-c, happy:6, stress:6}); } else L(pickFresh('bzx0', ['扩张太快，新店亏得一塌糊涂。', '新店选址选错了，门可罗雀。', '你扩大了产能，市场却突然不要那么多货了。', '新招的人管不过来，到处出乱子。']), 'b', {money:-c, happy:-8, stress:10}); })},
+    {l:'打广告', d:`约 ${fmt(Math.max(20000, Math.round(b.base * .1)))}`, dis:() => S.ap <= 0, f:act(() => { const c = Math.max(20000, Math.round(b.base * .1)); if (chance(.6)){ b.base = Math.round(b.base * (1.12 + Math.random() * .2)); b.brand = Math.min(5, (b.brand || 0) + 1); L(pickFresh('bzad1', ['你在电梯里投了一轮广告，来问的人明显多了。', '你请网红探店，视频火了，门口排起了长队。', '你的广告语被人编成了段子，满大街都在传。', '你在地铁站包了一面墙，客户说“原来是你们家”。', '你赞助了本地的马拉松，招牌一下子打响了。', '你做了一场直播促销，一晚上卖空了库存。']) + '（名气 +1：扩张和对外合作更顺）', 'g', {money:-c, happy:4}); } else L(pickFresh('bzad0', ['广告钱花出去，像扔进了水里。', '你请的代言人塌了房，广告只能紧急撤下。', '广告做得太浮夸，被网友群嘲了一番。', '广告公司拿了钱，投放的位置根本没人看。']), 'b', {money:-c, happy:-3, stress:4}); })},
+    {l:'研发新产品', d:`约 ${fmt(Math.max(30000, Math.round(b.base * .2)))}`, dis:() => S.ap <= 0, f:act(() => { const c = Math.max(30000, Math.round(b.base * .2)), r = Math.random(); if (r < .3){ b.base = Math.round(b.base * 1.5); L(pickFresh('bzrd2', ['新产品一上市就成了爆款，经销商排着队来要货。', '你们研发的新品拿了行业大奖。', '新产品解决了一个老大难问题，大客户主动找上门。', '你们的新菜单一推出就被抢着打卡。']), 'e', {money:-c, happy:10, stress:3}); } else if (r < .7){ b.base = Math.round(b.base * 1.1); L(pickFresh('bzrd1', ['新产品反响还行，给公司多添了一份收入。', '新品卖得不温不火，好在把成本赚回来了。', '新品打开了一个小市场，慢慢有了回头客。', '研发的新东西被一个老客户看中，下了几单。']), 'g', {money:-c, happy:3}); } else L(pickFresh('bzrd0', ['研发了一年，产品做出来根本没人要。', '新产品刚上市，就被大厂抄了个一模一样，价格还比你低。', '研发团队吵翻了，项目烂尾了。', '新品出了质量问题，召回又赔了一笔。']), 'b', {money:-c, happy:-6, stress:8}); })},
+    {l:'招兵买马', d:`约 ${fmt(Math.max(20000, Math.round(b.base * .15)))}`, dis:() => S.ap <= 0, f:act(() => { const c = Math.max(20000, Math.round(b.base * .15)); b.risk = Math.max(.02, (b.risk || .06) * .8); b.staff = (b.staff || 0) + 1; L(pickFresh('bzhr', ['你高薪挖来了一个行业老手，公司的短板一下补上了。', '你招了一批年轻人，公司里一下子热闹了。', '你请了个靠谱的财务，把账理得清清楚楚。', '你从大厂挖来一个技术骨干，大家干劲十足。', '你建了培训制度，老员工带新人，流失率降了下来。', '你给核心员工发了股份，人心一下子稳了。']) + '（团队更稳：公司更不容易倒）', 'g', {money:-c, stress:-4}); })},
+    {l:'裁员降本', d:'利润↑ · 伤人心', dis:() => S.ap <= 0 || !(b.staff > 0), f:act(() => { b.staff = Math.max(0, (b.staff || 0) - 1); if (chance(.25)){ const c = R(5, 30) * 10000; L(pickFresh('bzcut0', ['被裁的员工去劳动仲裁，你赔了一大笔钱。', '裁员的消息传出去，好几个骨干也跟着走了。', '被裁的员工在网上发帖骂你，公司口碑一落千丈。']), 'b', {money:-c, happy:-6, stress:10}); } else { b.base = Math.round(b.base * 1.1); L(pickFresh('bzcut1', ['你裁掉了几个闲人，账面一下子好看了。', '你砍掉了亏钱的业务线，公司轻装上阵。', '你精简了部门，开会都快了不少。', '你忍痛裁了一批人，发补偿金那天一晚上没睡着。']), 'n', {stress:6, happy:-3}); } })},
+    {l:b.mgr ? '自己回来管' : '请职业经理人', d:b.mgr ? '利润回来 · 更累' : '利润少两成 · 省心', dis:() => S.ap <= 0, f:act(() => { b.mgr = !b.mgr; L(b.mgr ? pickFresh('bzmgr1', ['你请了一位职业经理人，自己只管看报表、拿主意。', '你把日常管理交了出去，终于能睡个整觉了。', '你从猎头那里挖来一个总经理，自己退到了董事长的位置。', '你把公司交给经理人打理，每周只去开一次会。']) : '你重新坐回了总经理的办公室，凡事亲力亲为。', 'n', {stress:b.mgr ? -10 : 6}); })},
+    {l:'拉投资', d:'拿一笔钱 · 让出三成', dis:() => S.ap <= 0 || b.share || b.base < 300000, f:act(() => { if (chance(.45 + (b.brand || 0) * .06)){ const x = Math.round(b.base * (2 + Math.random() * 2)); b.share = .7; b.base = Math.round(b.base * 1.3); L(`投资人看好你的${b.n}，投了 ${fmt(x)}，占了三成股份。公司的账上和你的口袋都鼓了起来。`, 'e', {money:x, happy:8, stress:4}); } else L(pickFresh('bzvc0', ['你见了十几个投资人，没有一个肯掏钱。', '投资人看完报表，摇了摇头。', '对方要的条件太苛刻，你没敢签。', '谈到最后一步，投资人突然说“再看看”。']), 'b', {happy:-4, stress:5}); })},
+    {l:'上市敲钟', d:'规模够大才行', dis:() => S.ap <= 0 || b.listed || b.base < 3e6 || (b.yrs || 0) < 4, f:act(() => { if (chance(.3 + (b.brand || 0) * .05)){ const x = Math.round(b.base * (6 + Math.random() * 6)); b.listed = 1; b.base = Math.round(b.base * 1.3); L(`你的${b.n}上市了！你站在交易所里敲响了钟，手里的股份一夜之间值了 ${fmt(x)}。`, 'e', {money:x, happy:20, stress:-5}); node('钟', '公司上市', '敲钟那一刻，你想起了刚开张时的那间小屋。'); } else { const c = Math.round(b.base * .3); L(pickFresh('bzipo0', ['上市申请被打回来了，前期请券商、律师的钱都白花了。', '排了两年队，市场一冷，上市计划搁浅了。', '审核时查出几笔说不清的账，你只好撤回了申请。']), 'b', {money:-c, happy:-8, stress:10}); } })},
+    {l:'打价格战', d:'赢了做大 · 输了伤筋', dis:() => S.ap <= 0, f:act(() => { if (chance(.45 + (b.brand || 0) * .05)){ b.base = Math.round(b.base * 1.35); L(pickFresh('bzpw1', ['你咬牙降价，对手撑不住先退出了，市场全归了你。', '价格战打了半年，你把隔壁那家耗死了。', '你靠薄利多销把对手挤出了这条街。']), 'g', {happy:6, stress:8}); } else { b.base = Math.round(b.base * .7); L(pickFresh('bzpw0', ['对手财大气粗，你越降越亏，只好认输。', '价格一降就再也涨不回去了，利润薄得像纸。', '你和对手两败俱伤，便宜了第三家。']), 'b', {happy:-6, stress:10}); } })},
+    {l:'做假账逃税', d:'省一大笔 · 违法', dis:() => S.ap <= 0, f:act(() => { b.fake = (b.fake || 0) + 1; if (chance(.25 + b.fake * .08)){ S.biz = null; goJail(R(2, 6), '税务局查出了你做的假账。你的公司被查封，你本人被判了刑。'); } else { const x = Math.round(b.base * .25); L(`你少交了 ${fmt(x)} 的税，心里一直不踏实。`, 'n', {money:x, stress:10}); } })},
+    ...(kid ? [{l:`交给${kid.n}接班`, d:'以后每年拿分红', dis:() => S.ap <= 0, f:act(() => { kid.biz = 1; kidLove(kid, 3); S.flags.bizDiv = Math.round(b.base * .25); S.biz = null; L(`你把${b.n}交给了${kid.n}。交接那天，${kid.n}在全体员工面前给你鞠了一躬。（以后每年能拿一笔分红）`, 'e', {happy:10, stress:-15}); node('承', '公司后继有人', `${kid.n}坐在你当年的位置上，比你当年还像样。`); })}] : []),
+    {l:'卖掉公司', d:`约 ${fmt(Math.round(b.base * 3 * (b.share || 1) * (b.listed ? 2 : 1)))}`, dis:() => S.ap <= 0, f:act(() => { const v = Math.round(b.base * (2 + Math.random() * 2) * (b.share || 1) * (b.listed ? 2 : 1)); S.biz = null; L(`你把${b.n}卖了，到手 ${fmt(v)}。`, 'e', {money:v, happy:6, stress:-10}); })},
+    {l:'算了', d:'不消耗行动', f:() => {}},
+  ], '经营');
+}
+
+/* 公司里的意外 */
+EV.push(
+  {id:'bz_order', a:[18,90], w:.7, c:() => !!S.biz, r:() => { const b = S.biz, x = Math.round(b.base * (.3 + Math.random() * .7)); modal('大订单', pick([`一个大客户找上门，想下一笔大单，但要求三个月内交货。`, `一家连锁企业看中了你的${b.n}，想长期合作，只是账期要半年。`, `外地一个老板要包下你下半年的产能，价钱给得很高。`]), [
+    {l:'接！', f:() => { if (chance(.7)){ b.base = Math.round(b.base * 1.15); L(`你带着大家没日没夜地干，按时交了货，净赚 ${fmt(x)}，还留住了这个大客户。`, 'g', {money:x, happy:8, stress:8}); } else L('货是按时交了，对方却一拖再拖不给钱，最后只收回来一小半。', 'b', {money:-Math.round(x / 3), happy:-6, stress:10}); }},
+    {l:'太冒险，不接', f:() => L('你婉拒了。后来听说接了这单的同行，赚得盆满钵满。', 'n', {happy:-2})},
+  ], '经营'); }},
+  {id:'bz_poach', a:[18,90], w:.5, c:() => !!S.biz, r:() => { const b = S.biz; modal('骨干要走', '你最得力的骨干递了辞职信，说对手开出了双倍工资。', [
+    {l:'加钱留人', d:`约 ${fmt(Math.max(30000, Math.round(b.base * .1)))}`, f:() => { L('你给他涨了工资，还许了股份。他留了下来，干得比以前更卖力。', 'g', {money:-Math.max(30000, Math.round(b.base * .1)), stress:-2}); }},
+    {l:'让他走', f:() => { if (chance(.5)){ b.base = Math.round(b.base * .8); L('他带走了一批老客户。你的生意少了两成。', 'b', {happy:-5, stress:6}); } else L('他走了。你提拔了一个年轻人顶上，没想到干得更好。', 'g', {happy:3}); }},
+  ], '经营'); }},
+  {id:'bz_tax', a:[18,90], w:.6, c:() => !!S.biz && S.biz.fake > 0, r:() => { const b = S.biz; if (chance(.5)){ const x = Math.round(b.base * (1 + Math.random())); L(`税务局来查账了。你做过的假账被翻了出来，补缴税款加罚款一共 ${fmt(x)}。`, 'b', {money:-x, happy:-10, stress:15}); b.fake = 0; } else L('税务局来抽查，你提心吊胆了一个月，最后没查出什么。', 'n', {stress:8}); }},
+  {id:'bz_embez', a:[18,90], w:.4, c:() => !!S.biz && S.biz.mgr, r:() => { const b = S.biz; if (chance(.4)){ const x = Math.round(b.base * (.3 + Math.random() * .7)); L(`你发现职业经理人做了手脚，这几年偷偷挪走了 ${fmt(x)}。你报了警，钱只追回了一点。`, 'b', {money:-x, happy:-8, stress:10}); b.mgr = false; } else L('年终审计时，职业经理人把账做得清清楚楚，还给你提了几条好建议。', 'g', {happy:3}); }},
+  {id:'bz_award', a:[18,90], w:.35, once:1, c:() => !!S.biz && (S.biz.yrs || 0) >= 3, r:() => L(`你的${S.biz.n}被评为“本地诚信企业”，牌子挂在了大门口。`, 'g', {happy:6})},
+  {id:'bz_copy', a:[18,90], w:.4, c:() => !!S.biz, r:() => { const b = S.biz; modal('被抄袭', '一家新开的店把你家的招牌、菜单、装修抄得一模一样。', [
+    {l:'打官司', d:'约 5 万', f:() => { if (chance(.55)){ const x = R(10, 40) * 10000; L(`官司打赢了，对方赔了你 ${fmt(x)}，还登报道歉。`, 'g', {money:x - 50000, happy:6}); } else L('官司拖了一年多，最后不了了之。', 'b', {money:-50000, stress:6}); }},
+    {l:'不理，把东西做得更好', f:() => { if (chance(.6)) L('没过多久，那家店就关门了。老顾客说：“还是你们家正宗。”', 'g', {happy:4}); else { b.base = Math.round(b.base * .85); L('对方价格更低，抢走了你不少客人。', 'b', {happy:-4}); } }},
+  ], '经营'); }},
+);
+
+/* ---------- 五、天上掉的馅饼：有真有假，信了可能吃亏，不信也可能错过 ---------- */
+function oppEvent(o){
+  const real = chance(o.p), amt = o.amt ? o.amt() : 0, sharp = S.flags.antiScam ? .2 : 0;
+  const caught = () => L((o.caught || pickFresh('opCaught', ['你多问了几句，对方就开始支支吾吾，再也没了下文。', '你上网一搜，同样的说辞早就被人曝光过。', '你去派出所问了问，民警说这是老套路了，让你千万别信。', '你按官方渠道一查，压根没这回事。', '你让对方拿出证明，对方立马不吭声了。', '你问了懂行的朋友，朋友说：“这是骗局，别碰。”', '你多等了一天，对方就急了，催得越来越凶——你更确定有问题了。', '你在社区的防骗讲座上听过一模一样的故事。'])) + (S.flags.antiScam ? '（老年大学的防骗课派上了用场）' : ''), 'g', {happy:3, stress:-2});
+  const vfail = () => real ? L(o.slow || pickFresh('opSlow', ['你查了半天也没查明白，没敢碰。后来才知道那是真的，白白错过了。', '等你核实清楚，机会已经让别人拿走了。', '你犹豫得太久，对方说名额已经满了。后来证实那是真的。']), 'n', {happy:-3}) : L(pickFresh('opVF', ['你查了半天也没查明白，干脆没理。', '你问了一圈，众说纷纭，最后决定算了。', '你核实不了真假，索性当没这回事。']), 'n');
+  modal(o.title, o.text(amt), [
+    {l:o.go || '相信，照做', d:o.goD ? o.goD(amt) : '', f:() => real ? o.win(amt, false) : o.lose(amt)},
+    {l:o.check || '先核实一下', f:() => chance(.65 + sharp) ? (real ? o.win(amt, true) : caught()) : vfail()},
+    {l:o.no || '不理', f:() => real ? (o.miss ? o.miss(amt) : L(pickFresh('opMiss', ['后来你才知道，那居然是真的。你懊恼了好几天。', '过了一阵，你听说别人信了，真的拿到了好处。', '后来证实那件事是真的，你只能安慰自己“不是自己的财”。']), 'n', {happy:-4})) : L(o.dodge || pickFresh('opDodge', ['后来新闻里说，很多人在这上面吃了亏。你庆幸自己没理。', '你当时没理会。后来才知道，那是一个骗局。', '你没上当。过了没多久，那伙人就被警察端了。', '你后来在新闻里看到了一模一样的套路，倒吸一口凉气。']), 'g', {happy:2})},
+  ], o.tag || '机会');
+}
+const OPPS = [
+  {id:'op_call', a:[25,95], w:.6, c:() => S.money >= 10000, r:() => {
+    const kids = S.kids.some(k => !k.dead && S.age - k.b <= 30);
+    const sc = pick([
+      {t:'银行风控', p:.55, text:'一个自称银行风控中心的号码打来，说你的卡在外地有一笔异常消费，问是不是你本人。对方让你“配合冻结”。',
+        win:v => L(v ? '你自己打了银行官方客服，果然有人在盗刷你的卡。你赶紧挂失，钱一分没少。' : '你照着提示在手机银行里冻结了卡。真的有人在盗刷，好在拦住了。', 'g', {happy:3}),
+        lose:() => { const x = Math.round(S.money * (.2 + Math.random() * .3)); scam(x); L(`对方让你报验证码“冻结”，你照做了。半小时后，卡里的 ${fmt(x)} 被转走了。`, 'b', {money:-x, happy:-12, stress:12}); },
+        miss:() => { const x = Math.min(S.money, R(5, 50) * 1000); L(`你挂了电话。第二天收到短信：你的卡在外地被刷走了 ${fmt(x)}。那个电话是真的。`, 'b', {money:-x, happy:-6, stress:6}); }},
+      {t:'快递理赔', p:.4, text:'一个自称快递客服的人说你的包裹在运输途中丢了，要给你理赔。',
+        win:() => { const x = R(2, 10) * 100; L(`理赔款 ${fmt(x)} 真的到账了，快递公司还送了张优惠券。`, 'g', {money:x, happy:2}); },
+        lose:() => { const x = Math.round(Math.min(S.money * .3, R(1, 8) * 10000)); scam(x); L(`对方让你开通“理赔通道”，一步步引导你转账。等你回过神来，已经转出去 ${fmt(x)}。`, 'b', {money:-x, happy:-10, stress:10}); }},
+      ...(S.job ? [{t:'领导借钱', p:.3, text:'你收到一条短信：“我是你领导，换了新号，在外面急需周转一笔钱，明天还你。”',
+        win:v => { if (S.job) S.job.perf++; L(v ? '你给领导原来的号码打了个电话，还真是他手机丢了。你帮了这个忙，领导记在了心里。' : '你转了钱。第二天领导真的还了，还特意请你吃了顿饭。', 'g', {happy:3}); },
+        lose:() => { const x = R(2, 5) * 10000; scam(x); L(`你转了 ${fmt(x)}。第二天上班一问，领导根本不知道这回事。`, 'b', {money:-x, happy:-10, stress:8}); },
+        miss:() => { if (S.job) S.job.perf = Math.max(0, S.job.perf - 1); L('后来才知道，那真是领导换了号。他没说什么，可之后对你淡淡的。', 'b', {happy:-4, stress:4}); }}] : []),
+      ...(kids ? [{t:'孩子出事', p:.25, text:'一个陌生号码打来，带着哭腔：“你家孩子出了车祸，在医院抢救，急需交押金！”',
+        win:v => { const k = S.kids.find(k => !k.dead); if (k) kidLove(k, 2); L(v ? `你打给${k ? k.n : '孩子'}，没人接；再打医院，竟然是真的！你连夜赶到，好在只是骨折。` : `你把钱转了过去，连夜赶到医院——竟然是真的！好在送医及时，${k ? k.n : '孩子'}没有大碍。`, 'g', {money:-R(1, 3) * 10000, happy:2, stress:8}); },
+        lose:() => { const x = R(5, 20) * 10000; scam(x); L(`你慌了神，转了 ${fmt(x)}。转完才打通孩子的电话——孩子好好的，在上班。`, 'b', {money:-x, happy:-14, stress:14}); },
+        miss:() => { const k = S.kids.find(k => !k.dead); if (k) kidLove(k, -2); L(`你以为是骗子，挂了。后来才知道是真的，${k ? k.n : '孩子'}在医院躺了好几天，你都不知道。`, 'b', {happy:-10, stress:8}); }}] : []),
+      {t:'中奖通知', p:.15, text:'一个陌生号码说你在超市的年终抽奖里中了奖，让你带着身份证去领。',
+        win:() => { const x = R(5, 50) * 100; L(`你去超市一问，还真中了！领回来一台电饭煲和 ${fmt(x)} 的购物卡。`, 'g', {money:x, happy:5}); },
+        lose:() => { const x = R(3, 20) * 1000; scam(x); L(`对方说领奖要先交“个人所得税”，你转了 ${fmt(x)}，奖品自然是没影的事。`, 'b', {money:-x, happy:-8, stress:6}); }},
+    ]);
+    oppEvent({title:'陌生来电', p:sc.p, text:() => sc.text, win:(x, v) => sc.win(v), lose:() => sc.lose(), miss:sc.miss ? () => sc.miss() : null, go:'照对方说的做', check:'挂断，打官方电话核实', no:'不理会'});
+  }},
+  {id:'op_stock', a:[28,75], w:.35, c:() => S.money >= 100000, r:() => oppEvent({title:'原始股', p:.18, amt:() => Math.round(Math.min(S.money * .3, 500000) / 10000) * 10000,
+    text:x => `一个做生意的朋友神秘兮兮地说，有家公司马上要上市，内部原始股一股一块，“上市就翻十倍”。让你投 ${fmt(x)}。`, goD:x => fmt(x),
+    win:(x, v) => { const g = Math.round(x * (v ? 1.5 : 2.5)); L(`那家公司真的上市了！你${v ? '核实后投了一部分' : '投进去的钱'}翻了几番，净赚 ${fmt(g)}。`, 'e', {money:g, happy:15}); },
+    lose:x => { scam(x); L(`钱交出去以后，那家公司就人去楼空了。你的 ${fmt(x)} 打了水漂。`, 'b', {money:-x, happy:-15, stress:15}); }})},
+  {id:'op_parttime', a:[16,45], w:.4, r:() => oppEvent({title:'网上兼职', p:.15, amt:() => Math.min(Math.max(S.money, 0), R(1, 5) * 10000),
+    text:() => '手机上弹出一条兼职广告：“在家动动手指，日赚三百，当天结算。”',
+    win:() => { const x = R(3, 8) * 1000; L(`这次是真的：一家正规公司招线上客服。你干了几个月，挣了 ${fmt(x)}。`, 'g', {money:x, happy:3}); },
+    lose:x => { if (x <= 0){ L('对方让你先垫钱刷单，你根本没钱垫，对方骂了你一句就把你拉黑了。', 'n'); return; } scam(x); L(`头几单真的返了钱。接着对方让你“做大任务”，你垫进去 ${fmt(x)}，再也没返回来。`, 'b', {money:-x, happy:-10, stress:8}); }})},
+  {id:'op_heir', a:[30,85], w:.25, once:1, r:() => oppEvent({title:'律师来信', p:.2, amt:() => R(1, 5) * 10000,
+    text:x => `你收到一封律师函，说一位海外的远房亲戚过世了，你是遗产继承人之一。只是要先交 ${fmt(x)} 的“公证费”。`, goD:x => fmt(x),
+    win:(x, v) => { const g = R(20, 150) * 10000; L(`${v ? '你托人去领事馆查了，' : ''}遗产是真的！律所走完手续，你继承了 ${fmt(g)}。`, 'e', {money:g - (v ? 0 : x), happy:15}); node('遗', '意外的遗产', '你对那位亲戚，只剩一张泛黄的合影。'); },
+    lose:x => { scam(x); L(`你交了 ${fmt(x)} 公证费，那家“律所”就再也联系不上了。`, 'b', {money:-x, happy:-8, stress:6}); }})},
+  {id:'op_relic', a:[40,90], w:.35, r:() => oppEvent({title:'高价收老物件', p:.4, amt:() => R(2, 10) * 1000,
+    text:x => `有人上门说你家那件旧物件是老东西，愿意出高价收，只是要先交 ${fmt(x)} 的“鉴定费”。`, goD:x => fmt(x),
+    win:(x, v) => { const g = R(2, 15) * 10000; L(`${v ? '你自己拿去正规拍卖行鉴定，' : '鉴定下来，'}居然真是件老物件！最后卖了 ${fmt(g)}。`, 'e', {money:g - (v ? 0 : x), happy:10}); },
+    lose:x => { scam(x); L(`你交了 ${fmt(x)} 鉴定费。对方说“专家明天来”，然后就没有然后了。`, 'b', {money:-x, happy:-6, stress:4}); }})},
+  {id:'op_metro', a:[28,70], w:.35, c:() => S.money >= 300000, r:() => oppEvent({title:'内部消息', p:.4, amt:() => 300000, tag:'投资',
+    text:() => '一个在规划局上班的亲戚悄悄跟你说，城东那片要通地铁了，房子现在买，过两年能涨一大截。', go:'赶紧去买一套', goD:() => '首付 30 万', check:'先去查查规划公示',
+    win:(x, v) => { const g = R(15, 45) * 10000; S.assets.houses.push({n:'城东的房子', v:x * 3 + g, debt:x * 2, pay:Math.round(x * 2 / 20), i:0, a:S.age, s:R(1, 1e9)}); L(`${v ? '规划公示上果然有这条线。' : ''}地铁真的通了，你买的城东房子涨了 ${fmt(g)}。`, 'e', {money:-x, happy:10}); },
+    lose:x => { const loss = R(5, 12) * 10000; S.assets.houses.push({n:'城东的房子', v:x * 3 - loss, debt:x * 2, pay:Math.round(x * 2 / 20), i:0, a:S.age, s:R(1, 1e9)}); L(`地铁线路最后改道了，城东的房子不涨反跌，你一进一出亏了 ${fmt(loss)}。`, 'b', {money:-x, happy:-8, stress:8}); },
+    miss:() => L('你没当回事。两年后地铁真的通了，那片房价翻了一番。', 'n', {happy:-5}),
+    caught:'你去查了规划公示，上面根本没有这条线。你没买。', dodge:'你没当回事。后来地铁线路改了道，城东那片的房价还跌了。'})},
+  {id:'op_head', a:[25,55], w:.4, c:() => !!S.job, r:() => oppEvent({title:'猎头电话', p:.55,
+    text:() => '一个猎头打来电话，说有家公司想挖你，薪水是现在的一倍半，不过要你先交一笔“职业测评费”。', go:'交钱去面试', goD:() => '8000 元', check:'先查查这家公司',
+    win:(x, v) => { if (!S.job) return; const old = S.job.t; S.job.pay = Math.round(S.job.pay * 1.5); L(`${v ? '你查了，公司是真的，测评费是猎头自己瞎加的，你没交。' : '测评费交得冤，但'}面试很顺利，你跳槽了，还是做${old}，年薪涨到 ${fmt(S.job.pay)}。`, 'e', {money:v ? 0 : -8000, happy:10}); },
+    lose:() => { scam(8000); L('你交了 8000 块测评费，那个猎头再也没出现过。', 'b', {money:-8000, happy:-6, stress:4}); },
+    miss:() => L('后来你在行业群里看到，那家公司真的高薪挖走了你的一个同事。', 'n', {happy:-3})})},
+  {id:'op_tour', a:[60,90], w:.45, c:() => S.money >= 5000, r:() => oppEvent({title:'低价旅游团', p:.35,
+    text:() => '小区门口有人发传单：“老年人五日游，只要 299，包吃包住！”', go:'报名', goD:() => '299 元', check:'先问问旅行社资质',
+    win:() => L('这次是社区和正规旅行社合办的福利团，吃住都不错，你玩得很开心，还认识了几个老伙伴。', 'g', {money:-299, happy:7, stress:-6}),
+    lose:() => { const x = R(5, 20) * 1000; scam(x); L(`一路上被拉进了五个购物点，导游脸色难看，你硬着头皮花了 ${fmt(x)} 买了一堆玉器和保健品。`, 'b', {money:-x, happy:-6, stress:6}); },
+    miss:() => L('邻居报了名，回来说玩得挺好，还给你带了特产。', 'n', {happy:-1})})},
+  {id:'op_game', a:[13,22], w:.4, r:() => oppEvent({title:'高价收号', p:.3, tag:'机会',
+    text:() => '有人在游戏里私聊你，说愿意出高价收你的游戏账号。', go:'卖给他', check:'走官方交易平台',
+    win:(x, v) => { const g = R(5, 30) * 100; L(`${v ? '对方同意走官方平台，' : ''}钱真的到账了，你卖了 ${fmt(g)}。`, 'g', {money:g, happy:4}); },
+    lose:() => L('你把账号密码给了对方，钱没收到，账号也被改了密码。', 'b', {happy:-6, stress:4})})},
+];
+EV.push(...OPPS);
+
+/* ---------- 原来那几个“一定是骗局”的事件，改成有真有假 ---------- */
+{ const e = EV.find(x => x.id === 'telecom'); if (e) e.w = .001; }   // 由上面的“陌生来电”接替
+{ const e = EV.find(x => x.id === 'killpig'); if (e) e.r = () => { const n = randName(other()); oppEvent({title:'网恋', p:.2, tag:'感情', amt:() => Math.round(S.money * (.3 + Math.random() * .4)),
+  text:() => `你在网上认识了${n}，对方温柔体贴，聊了几个月，说想带你一起做一个“稳赚不赔”的投资。`, go:'跟着投', goD:x => fmt(x), check:'先见面、再报警核实',
+  win:(x, v) => { if (v){ if (!S.partner) setPartner(n); L(`你坚持要先见面。${n}真的来了，是个实实在在的人，那个投资也只是普通的基金。你们后来在一起了。`, 'g', {happy:10}); } else { const g = Math.round(x * (.1 + Math.random() * .3)); L(`${n}是真心的，那个投资也是正规理财，一年赚了 ${fmt(g)}。`, 'g', {money:g, happy:6}); } },
+  lose:x => { scam(x); L(`你一共投进去 ${fmt(x)}。平台突然打不开了，${n}也再也联系不上。这是“杀猪盘”。`, 'b', {money:-x, happy:-20, stress:20}); node('骗', '被骗光了积蓄', '你对着空白的聊天框坐了一整夜。', true); },
+  miss:() => L(`你没再回${n}的消息。很久以后你才从共同好友那里知道，对方是真心的。`, 'n', {happy:-4})}); }; }
+{ const e = EV.find(x => x.id === 'pyramid'); if (e) e.r = () => oppEvent({title:'老同学的邀请', p:.3, tag:'机会',
+  text:() => '多年不联系的老同学突然打来电话：“我这边有个好工作，月入三万，你来看看？”', go:'去看看', check:'先打听打听那家公司',
+  win:(x, v) => { if (!S.job || S.job.pay < 250000){ setJob('销售', 250000); L(`${v ? '你打听了一圈，那是家正经公司。' : ''}老同学没骗你，你成了一名销售，收入翻了一番。`, 'e', {happy:10}); } else L('老同学的公司是正经公司，只是你现在的工作更好，就婉拒了。', 'n'); },
+  lose:() => { S.flags.scamLost = (S.flags.scamLost || 0) + 30000; unlock('scammed'); L('那是一个传销窝点。你被关了半年，交了三万“入会费”才逃出来。', 'b', {money:-30000, happy:-15, stress:15, health:-5}); }}); }
+{ const e = EV.find(x => x.id === 'scamold'); if (e) e.r = () => oppEvent({title:'健康讲座', p:.3, tag:'机会',
+  text:() => '有人热情地请你去听健康讲座，送鸡蛋，最后推销一款保健产品。', go:'买一疗程', goD:() => '约 1 万', check:'拿去问问社区医生', no:'领了鸡蛋就走',
+  win:() => { bump('fit', 1, 10); S.flags.fitY = S.age; L('这回是医院办的义诊，卖的是正规的血压计和钙片。你按时吃药、天天量血压，身体好了些。', 'g', {money:-3000, health:3, happy:2}); },
+  lose:() => { scam(30000); L('一疗程三万块，吃了半年，没有任何效果。', 'b', {money:-30000, happy:-3}); },
+  miss:() => L('你领了鸡蛋就走。后来听说那是医院办的义诊，测出了好几个高血压的老人。', 'n'),
+  caught:'社区医生看了一眼说明书就直摇头：“这东西没用，别买。”', dodge:'你领了鸡蛋就走。后来听说，买了的老人一个都没见效。'}); }
+
+/* “学会了跳广场舞”这种事一辈子只该发生一次 */
+{ const e = EV.find(x => x.id === 'dance'); if (e) e.once = 1; }
+
+/* 学会了游泳，落水时更能自救 */
+{ const d = ACC.find(x => x.id === 'drown'); if (d){ const c = d.c; d.c = () => c() && !(S.flags.swim && chance(.7)); } }
 
 /* ---------- 人生总结图：一张可以保存、发给朋友比较的长图 ---------- */
 /* 满分 1000：寿命 200 · 身心 200 · 财富 150 · 家庭 150 · 成就见识 200 · 品行 100，每一项越往上越难 */
@@ -6793,12 +7138,12 @@ function stageCard(s){
 
 /* ---------- 行动分类 ---------- */
 const CATS = [
-  ['成长', ['咿呀学语','看绘本','上兴趣班','认真学习','课外补习','刷题','泡图书馆','考证','写作','练习才艺','老年大学','读经','在狱中读书']],
-  ['身心', ['呼呼大睡','运动','健身锻炼','休息放空','看医生','戒烟','戒酒','戒赌','晨练遛弯','广场舞','养花钓鱼','打扮自己','做义工','放风锻炼','扫地挑水','打坐念经','去救助站','喝酒取暖']],
+  ['成长', ['咿呀学语','看绘本','上兴趣班','认真学习','课外补习','刷题','泡图书馆','考证','写作','练习才艺','老年大学','读经','在狱中读书','认字识数','学游泳','当班干部','参加竞赛','学一门手艺','学编程','参加社团','进修充电','写家谱']],
+  ['身心', ['呼呼大睡','运动','健身锻炼','休息放空','看医生','定期体检','回老家看看','戒烟','戒酒','戒赌','晨练遛弯','广场舞','养花钓鱼','打扮自己','做义工','放风锻炼','扫地挑水','打坐念经','去救助站','喝酒取暖']],
   ['玩乐', ['要零花钱','撒娇','到处乱爬','在外面疯玩','看动画片','打游戏','调皮捣蛋','交朋友','逃课出去玩','娱乐放松','夜生活','下棋打牌','烧香算命','去旅行','云游四方','约老同学']],
-  ['工作', ['找工作','努力工作','按时下班','换工作','谈加薪','辞职','退休','创业','经营公司','打零工','兼职打工','摆地摊','直播带货','跑网约车','帮家里干活','捡瓶子','乞讨','打日结零工','劳动改造']],
-  ['家庭', ['约会交友','陪伴伴侣','求婚','分手','要孩子','辅导孩子','陪伴家人','带孙子','养宠物','陪宠物','找情人','陪情人','给情人花钱','断了情人','离婚','写信回家']],
-  ['钱财', ['借钱','还债','买新东西','消费购物','理财投资','赌一把','变卖家当','做慈善','租个小房间','买保险','退保']],
+  ['工作', ['找工作','努力工作','按时下班','换工作','谈加薪','辞职','退休','创业','经营公司','打零工','兼职打工','摆地摊','直播带货','跑网约车','帮家里干活','捡瓶子','乞讨','打日结零工','劳动改造','找实习','返聘当顾问','带徒弟']],
+  ['家庭', ['约会交友','陪伴伴侣','求婚','分手','要孩子','辅导孩子','陪伴家人','带孙子','养宠物','陪宠物','找情人','陪情人','给情人花钱','断了情人','离婚','写信回家','孝敬父母','提前分家产']],
+  ['钱财', ['借钱','还债','存养老钱','买新东西','消费购物','理财投资','赌一把','变卖家当','做慈善','租个小房间','买保险','退保']],
 ];
 const catOf = l => (CATS.find(([, ls]) => ls.includes(l)) || ['其他'])[0];
 let curTab = null;
